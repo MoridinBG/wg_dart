@@ -61,203 +61,242 @@ WireguardDartPlugin::WireguardDartPlugin() {}
 
 WireguardDartPlugin::~WireguardDartPlugin() { this->connection_status_observer_.get()->StopObserving(); }
 
+std::optional<WireguardMethod> WireguardDartPlugin::GetMethodFromString(const std::string &method_name) {
+  if (method_name == "generateKeyPair") return WireguardMethod::GENERATE_KEY_PAIR;
+  if (method_name == "checkTunnelConfiguration") return WireguardMethod::CHECK_TUNNEL_CONFIGURATION;
+  if (method_name == "nativeInit") return WireguardMethod::NATIVE_INIT;
+  if (method_name == "setupTunnel") return WireguardMethod::SETUP_TUNNEL;
+  if (method_name == "connect") return WireguardMethod::CONNECT;
+  if (method_name == "disconnect") return WireguardMethod::DISCONNECT;
+  if (method_name == "status") return WireguardMethod::STATUS;
+  return std::nullopt;
+}
+
 void WireguardDartPlugin::HandleMethodCall(const flutter::MethodCall<flutter::EncodableValue> &call,
                                            std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   const auto *args = std::get_if<flutter::EncodableMap>(call.arguments());
 
-  if (call.method_name() == "generateKeyPair") {
-    std::pair public_private_keypair = GenerateKeyPair();
-    std::map<flutter::EncodableValue, flutter::EncodableValue> return_value;
-    return_value[flutter::EncodableValue("publicKey")] = flutter::EncodableValue(public_private_keypair.first);
-    return_value[flutter::EncodableValue("privateKey")] = flutter::EncodableValue(public_private_keypair.second);
-    result->Success(flutter::EncodableValue(return_value));
+  auto method = GetMethodFromString(call.method_name());
+
+  if (!method.has_value()) {
+    result->NotImplemented();
     return;
   }
 
-  if (call.method_name() == "checkTunnelConfiguration") {
-    auto tunnel_service = this->tunnel_service_.get();
-    result->Success(flutter::EncodableValue(tunnel_service != nullptr));
-    return;
+  switch (method.value()) {
+    case WireguardMethod::GENERATE_KEY_PAIR:
+      HandleGenerateKeyPair(args, std::move(result));
+      break;
+    case WireguardMethod::CHECK_TUNNEL_CONFIGURATION:
+      HandleCheckTunnelConfiguration(args, std::move(result));
+      break;
+    case WireguardMethod::NATIVE_INIT:
+      HandleNativeInit(args, std::move(result));
+      break;
+    case WireguardMethod::SETUP_TUNNEL:
+      HandleSetupTunnel(args, std::move(result));
+      break;
+    case WireguardMethod::CONNECT:
+      HandleConnect(args, std::move(result));
+      break;
+    case WireguardMethod::DISCONNECT:
+      HandleDisconnect(args, std::move(result));
+      break;
+    case WireguardMethod::STATUS:
+      HandleStatus(args, std::move(result));
+      break;
   }
-
-  if (call.method_name() == "nativeInit") {
-    // Disable packet forwarding that conflicts with WireGuard
-    ServiceControl remoteAccessService = ServiceControl(L"RemoteAccess");
-    try {
-      remoteAccessService.Stop();
-    } catch (std::exception &e) {
-      result->Error(std::string("Could not stop packet forwarding: ").append(e.what()));
-      return;
-    }
-    try {
-      remoteAccessService.Disable();
-    } catch (std::exception &e) {
-      result->Error(std::string("Could not disable packet forwarding: ").append(e.what()));
-      return;
-    }
-    result->Success();
-    return;
-  }
-
-  if (call.method_name() == "setupTunnel") {
-    const auto *arg_service_name = std::get_if<std::string>(ValueOrNull(*args, "win32ServiceName"));
-    if (arg_service_name == NULL) {
-      result->Error("Argument 'win32ServiceName' is required");
-      return;
-    }
-    if (this->tunnel_service_ != nullptr) {
-      // Ensure the observer is started even if the tunnel service already exists
-      this->connection_status_observer_.get()->StartObserving(Utf8ToWide(*arg_service_name));
-      result->Success();
-      return;
-    }
-    try {
-      this->tunnel_service_ = std::make_unique<ServiceControl>(Utf8ToWide(*arg_service_name));
-    } catch (const std::exception &e) {
-      result->Error("SERVICE_CONTROL_INIT_ERROR", std::string("Failed to initialize ServiceControl: ") + e.what());
-      return;
-    }
-    this->connection_status_observer_.get()->StartObserving(Utf8ToWide(*arg_service_name));
-
-    result->Success();
-    return;
-  }
-
-  if (call.method_name() == "connect") {
-    auto tunnel_service = this->tunnel_service_.get();
-    if (tunnel_service == nullptr) {
-      result->Error("Invalid state: call 'setupTunnel' first");
-      return;
-    }
-    const auto *cfg = std::get_if<std::string>(ValueOrNull(*args, "cfg"));
-    if (cfg == NULL) {
-      result->Error("Argument 'cfg' is required");
-      return;
-    }
-
-    std::wstring wg_config_filename;
-    try {
-      wg_config_filename = WriteConfigToTempFile(*cfg);
-    } catch (std::exception &e) {
-      result->Error(std::string("Could not write wireguard config: ").append(e.what()));
-      return;
-    }
-
-    wchar_t module_filename[MAX_PATH];
-    GetModuleFileName(NULL, module_filename, MAX_PATH);
-    auto current_exec_dir = std::wstring(module_filename);
-    current_exec_dir = current_exec_dir.substr(0, current_exec_dir.find_last_of(L"\\/"));
-
-    std::wostringstream service_exec_builder;
-    service_exec_builder << current_exec_dir << "\\wireguard_svc.exe" << L" -service" << L" -config-file=\""
-                         << wg_config_filename << "\"";
-    std::wstring service_exec = service_exec_builder.str();
-
-    try {
-      CreateArgs csa = {};
-      csa.description = tunnel_service->service_name_ + L" WireGuard tunnel";
-      csa.executable_and_args = service_exec;
-      csa.dependencies = L"Nsi\0TcpIp\0";
-      tunnel_service->Create(csa);
-    } catch (std::exception &e) {
-      result->Error(std::string(e.what()));
-      return;
-    }
-    this->connection_status_observer_.get()->StartObserving(L"");
-    try {
-      tunnel_service->Start();
-    } catch (const std::runtime_error &e) {
-      // Handle runtime errors with a specific error code and detailed message
-      std::string error_message = "Runtime error while starting the tunnel service: ";
-      error_message += e.what();
-      result->Error("RUNTIME_ERROR", error_message);  // Error code: RUNTIME_ERROR
-      return;
-    } catch (const std::exception &e) {
-      // Handle service exceptions with a specific error code and detailed message
-      DWORD error_code = GetLastError();  // Retrieve the last Windows error code
-      std::string error_message = "Exception while starting the tunnel service: ";
-      error_message += e.what();
-      if (error_code != 0) {
-        error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
-        error_message += " Description: " + GetLastErrorAsString(error_code);
-      }
-      result->Error("SERVICE_EXCEPTION", error_message);  // Error code: SERVICE_EXCEPTION
-      return;
-    } catch (...) {
-      // Handle unknown exceptions with additional details
-      DWORD error_code = GetLastError();  // Retrieve the last Windows error code
-      std::string error_message = "An unknown error occurred while starting the tunnel service.";
-      if (error_code != 0) {
-        error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
-        error_message += " Description: " + GetLastErrorAsString(error_code);
-      }
-      result->Error("UNKNOWN_ERROR", error_message);  // Error code: UNKNOWN_ERROR
-      return;
-    }
-    result->Success();
-    return;
-  }
-
-  if (call.method_name() == "disconnect") {
-    auto tunnel_service = this->tunnel_service_.get();
-    if (tunnel_service == nullptr) {
-      result->Error("Invalid state: call 'setupTunnel' first");
-      return;
-    }
-
-    try {
-      tunnel_service->Stop();
-    } catch (const std::runtime_error &e) {
-      // Handle runtime errors with a specific error code and detailed message
-      std::string error_message = "Runtime error while stopping the tunnel service: ";
-      error_message += e.what();
-      result->Error("RUNTIME_ERROR", error_message);  // Error code: RUNTIME_ERROR
-      return;
-    } catch (const std::exception &e) {
-      // Handle service exceptions with a specific error code and detailed message
-      DWORD error_code = GetLastError();  // Retrieve the last Windows error code
-      std::string error_message = "Exception while stopping the tunnel service: ";
-      error_message += e.what();
-      if (error_code != 0) {
-        error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
-        error_message += " Description: " + GetLastErrorAsString(error_code);
-      }
-      result->Error("SERVICE_EXCEPTION", error_message);  // Error code: SERVICE_EXCEPTION
-      return;
-    } catch (...) {
-      // Handle unknown exceptions with additional details
-      DWORD error_code = GetLastError();  // Retrieve the last Windows error code
-      std::string error_message = "An unknown error occurred while stopping the tunnel service.";
-      if (error_code != 0) {
-        error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
-        error_message += " Description: " + GetLastErrorAsString(error_code);
-      }
-      result->Error("UNKNOWN_ERROR", error_message);  // Error code: UNKNOWN_ERROR
-      return;
-    }
-
-    result->Success();
-    return;
-  }
-
-  if (call.method_name() == "status") {
-    auto tunnel_service = this->tunnel_service_.get();
-    if (tunnel_service == nullptr) {
-      return result->Success(ConnectionStatusToString(ConnectionStatus::disconnected));
-    }
-
-    try {
-      auto status = tunnel_service->Status();
-      result->Success(ConnectionStatusToString(status));
-    } catch (std::exception &e) {
-      result->Error(std::string(e.what()));
-    }
-    return;
-  }
-
-  result->NotImplemented();
 }
 
+void WireguardDartPlugin::HandleGenerateKeyPair(
+    const flutter::EncodableMap *args, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  std::pair public_private_keypair = GenerateKeyPair();
+  std::map<flutter::EncodableValue, flutter::EncodableValue> return_value;
+  return_value[flutter::EncodableValue("publicKey")] = flutter::EncodableValue(public_private_keypair.first);
+  return_value[flutter::EncodableValue("privateKey")] = flutter::EncodableValue(public_private_keypair.second);
+  result->Success(flutter::EncodableValue(return_value));
+}
+
+void WireguardDartPlugin::HandleCheckTunnelConfiguration(
+    const flutter::EncodableMap *args, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  auto tunnel_service = this->tunnel_service_.get();
+  result->Success(flutter::EncodableValue(tunnel_service != nullptr));
+}
+
+void WireguardDartPlugin::HandleNativeInit(const flutter::EncodableMap *args,
+                                           std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  // Disable packet forwarding that conflicts with WireGuard
+  ServiceControl remoteAccessService = ServiceControl(L"RemoteAccess");
+  try {
+    remoteAccessService.Stop();
+  } catch (std::exception &e) {
+    result->Error(std::string("Could not stop packet forwarding: ").append(e.what()));
+    return;
+  }
+  try {
+    remoteAccessService.Disable();
+  } catch (std::exception &e) {
+    result->Error(std::string("Could not disable packet forwarding: ").append(e.what()));
+    return;
+  }
+  result->Success();
+}
+
+void WireguardDartPlugin::HandleSetupTunnel(const flutter::EncodableMap *args,
+                                            std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  const auto *arg_service_name = std::get_if<std::string>(ValueOrNull(*args, "win32ServiceName"));
+  if (arg_service_name == NULL) {
+    result->Error("Argument 'win32ServiceName' is required");
+    return;
+  }
+  if (this->tunnel_service_ != nullptr) {
+    // Ensure the observer is started even if the tunnel service already exists
+    this->connection_status_observer_.get()->StartObserving(Utf8ToWide(*arg_service_name));
+    result->Success();
+    return;
+  }
+  try {
+    this->tunnel_service_ = std::make_unique<ServiceControl>(Utf8ToWide(*arg_service_name));
+  } catch (const std::exception &e) {
+    result->Error("SERVICE_CONTROL_INIT_ERROR", std::string("Failed to initialize ServiceControl: ") + e.what());
+    return;
+  }
+  this->connection_status_observer_.get()->StartObserving(Utf8ToWide(*arg_service_name));
+
+  result->Success();
+}
+
+void WireguardDartPlugin::HandleConnect(const flutter::EncodableMap *args,
+                                        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  auto tunnel_service = this->tunnel_service_.get();
+  if (tunnel_service == nullptr) {
+    result->Error("Invalid state: call 'setupTunnel' first");
+    return;
+  }
+  const auto *cfg = std::get_if<std::string>(ValueOrNull(*args, "cfg"));
+  if (cfg == NULL) {
+    result->Error("Argument 'cfg' is required");
+    return;
+  }
+
+  std::wstring wg_config_filename;
+  try {
+    wg_config_filename = WriteConfigToTempFile(*cfg);
+  } catch (std::exception &e) {
+    result->Error(std::string("Could not write wireguard config: ").append(e.what()));
+    return;
+  }
+
+  wchar_t module_filename[MAX_PATH];
+  GetModuleFileName(NULL, module_filename, MAX_PATH);
+  auto current_exec_dir = std::wstring(module_filename);
+  current_exec_dir = current_exec_dir.substr(0, current_exec_dir.find_last_of(L"\\/"));
+
+  std::wostringstream service_exec_builder;
+  service_exec_builder << current_exec_dir << "\\wireguard_svc.exe" << L" -service" << L" -config-file=\""
+                       << wg_config_filename << "\"";
+  std::wstring service_exec = service_exec_builder.str();
+
+  try {
+    CreateArgs csa = {};
+    csa.description = tunnel_service->service_name_ + L" WireGuard tunnel";
+    csa.executable_and_args = service_exec;
+    csa.dependencies = L"Nsi\0TcpIp\0";
+    tunnel_service->Create(csa);
+  } catch (std::exception &e) {
+    result->Error(std::string(e.what()));
+    return;
+  }
+  this->connection_status_observer_.get()->StartObserving(L"");
+  try {
+    tunnel_service->Start();
+  } catch (const std::runtime_error &e) {
+    // Handle runtime errors with a specific error code and detailed message
+    std::string error_message = "Runtime error while starting the tunnel service: ";
+    error_message += e.what();
+    result->Error("RUNTIME_ERROR", error_message);  // Error code: RUNTIME_ERROR
+    return;
+  } catch (const std::exception &e) {
+    // Handle service exceptions with a specific error code and detailed message
+    DWORD error_code = GetLastError();  // Retrieve the last Windows error code
+    std::string error_message = "Exception while starting the tunnel service: ";
+    error_message += e.what();
+    if (error_code != 0) {
+      error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
+      error_message += " Description: " + GetLastErrorAsString(error_code);
+    }
+    result->Error("SERVICE_EXCEPTION", error_message);  // Error code: SERVICE_EXCEPTION
+    return;
+  } catch (...) {
+    // Handle unknown exceptions with additional details
+    DWORD error_code = GetLastError();  // Retrieve the last Windows error code
+    std::string error_message = "An unknown error occurred while starting the tunnel service.";
+    if (error_code != 0) {
+      error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
+      error_message += " Description: " + GetLastErrorAsString(error_code);
+    }
+    result->Error("UNKNOWN_ERROR", error_message);  // Error code: UNKNOWN_ERROR
+    return;
+  }
+  result->Success();
+}
+
+void WireguardDartPlugin::HandleDisconnect(const flutter::EncodableMap *args,
+                                           std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  auto tunnel_service = this->tunnel_service_.get();
+  if (tunnel_service == nullptr) {
+    result->Error("Invalid state: call 'setupTunnel' first");
+    return;
+  }
+
+  try {
+    tunnel_service->Stop();
+  } catch (const std::runtime_error &e) {
+    // Handle runtime errors with a specific error code and detailed message
+    std::string error_message = "Runtime error while stopping the tunnel service: ";
+    error_message += e.what();
+    result->Error("RUNTIME_ERROR", error_message);  // Error code: RUNTIME_ERROR
+    return;
+  } catch (const std::exception &e) {
+    // Handle service exceptions with a specific error code and detailed message
+    DWORD error_code = GetLastError();  // Retrieve the last Windows error code
+    std::string error_message = "Exception while stopping the tunnel service: ";
+    error_message += e.what();
+    if (error_code != 0) {
+      error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
+      error_message += " Description: " + GetLastErrorAsString(error_code);
+    }
+    result->Error("SERVICE_EXCEPTION", error_message);  // Error code: SERVICE_EXCEPTION
+    return;
+  } catch (...) {
+    // Handle unknown exceptions with additional details
+    DWORD error_code = GetLastError();  // Retrieve the last Windows error code
+    std::string error_message = "An unknown error occurred while stopping the tunnel service.";
+    if (error_code != 0) {
+      error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
+      error_message += " Description: " + GetLastErrorAsString(error_code);
+    }
+    result->Error("UNKNOWN_ERROR", error_message);  // Error code: UNKNOWN_ERROR
+    return;
+  }
+
+  result->Success();
+}
+
+void WireguardDartPlugin::HandleStatus(const flutter::EncodableMap *args,
+                                       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  auto tunnel_service = this->tunnel_service_.get();
+  if (tunnel_service == nullptr) {
+    return result->Success(ConnectionStatusToString(ConnectionStatus::disconnected));
+  }
+
+  try {
+    auto status = tunnel_service->Status();
+    result->Success(ConnectionStatusToString(status));
+  } catch (std::exception &e) {
+    result->Error(std::string(e.what()));
+  }
+}
 }  // namespace wireguard_dart
 
 std::string GetLastErrorAsString(DWORD error_code) {
