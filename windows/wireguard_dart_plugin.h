@@ -10,6 +10,10 @@
 #include "connection_status_observer.h"
 #include "service_control.h"
 
+namespace spdlog {
+class logger;
+}  // namespace spdlog
+
 namespace wireguard_dart {
 
 enum class WireguardMethod {
@@ -58,6 +62,7 @@ class WireguardDartPlugin : public flutter::Plugin {
 
   std::unique_ptr<ServiceControl> tunnel_service_;
   std::unique_ptr<ConnectionStatusObserver> connection_status_observer_;
+  std::shared_ptr<spdlog::logger> logger_;
 };
 
 }  // namespace wireguard_dart

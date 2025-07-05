@@ -17,6 +17,7 @@
 #include "connection_status_observer.h"
 #include "key_generator.h"
 #include "service_control.h"
+#include "spdlog/spdlog.h"
 #include "tunnel.h"
 #include "utils.h"
 #include "wireguard.h"
@@ -57,7 +58,20 @@ void WireguardDartPlugin::RegisterWithRegistrar(flutter::PluginRegistrarWindows 
   registrar->AddPlugin(std::move(plugin));
 }
 
-WireguardDartPlugin::WireguardDartPlugin() {}
+WireguardDartPlugin::WireguardDartPlugin() {
+  // Initialize logger
+  try {
+    logger_ = spdlog::get("wireguard_dart");
+    if (!logger_) {
+      logger_ = spdlog::default_logger();
+      logger_->info("WireguardDartPlugin initialized with default logger");
+    }
+  } catch (const std::exception &e) {
+    // Fallback to default logger if initialization fails
+    logger_ = spdlog::default_logger();
+    logger_->warn("Failed to initialize named logger, using default: {}", e.what());
+  }
+}
 
 WireguardDartPlugin::~WireguardDartPlugin() { this->connection_status_observer_.get()->StopObserving(); }
 
@@ -110,42 +124,52 @@ void WireguardDartPlugin::HandleMethodCall(const flutter::MethodCall<flutter::En
 
 void WireguardDartPlugin::HandleGenerateKeyPair(
     const flutter::EncodableMap *args, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  logger_->info("Generate key pair initiated");
   std::pair public_private_keypair = GenerateKeyPair();
   std::map<flutter::EncodableValue, flutter::EncodableValue> return_value;
   return_value[flutter::EncodableValue("publicKey")] = flutter::EncodableValue(public_private_keypair.first);
   return_value[flutter::EncodableValue("privateKey")] = flutter::EncodableValue(public_private_keypair.second);
   result->Success(flutter::EncodableValue(return_value));
+  logger_->info("Generate key pair completed successfully");
 }
 
 void WireguardDartPlugin::HandleCheckTunnelConfiguration(
     const flutter::EncodableMap *args, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  logger_->info("Check tunnel configuration initiated");
   auto tunnel_service = this->tunnel_service_.get();
   result->Success(flutter::EncodableValue(tunnel_service != nullptr));
+  logger_->info("Check tunnel configuration completed - service exists: {}", tunnel_service != nullptr);
 }
 
 void WireguardDartPlugin::HandleNativeInit(const flutter::EncodableMap *args,
                                            std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  logger_->info("Native init initiated");
   // Disable packet forwarding that conflicts with WireGuard
   ServiceControl remoteAccessService = ServiceControl(L"RemoteAccess");
   try {
     remoteAccessService.Stop();
   } catch (std::exception &e) {
+    logger_->error("Failed to stop RemoteAccess service: {}", e.what());
     result->Error(std::string("Could not stop packet forwarding: ").append(e.what()));
     return;
   }
   try {
     remoteAccessService.Disable();
   } catch (std::exception &e) {
+    logger_->error("Failed to disable RemoteAccess service: {}", e.what());
     result->Error(std::string("Could not disable packet forwarding: ").append(e.what()));
     return;
   }
   result->Success();
+  logger_->info("Native init completed successfully");
 }
 
 void WireguardDartPlugin::HandleSetupTunnel(const flutter::EncodableMap *args,
                                             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  logger_->info("Setup tunnel initiated");
   const auto *arg_service_name = std::get_if<std::string>(ValueOrNull(*args, "win32ServiceName"));
   if (arg_service_name == NULL) {
+    logger_->error("Setup tunnel failed: win32ServiceName argument missing");
     result->Error("Argument 'win32ServiceName' is required");
     return;
   }
@@ -153,28 +177,34 @@ void WireguardDartPlugin::HandleSetupTunnel(const flutter::EncodableMap *args,
     // Ensure the observer is started even if the tunnel service already exists
     this->connection_status_observer_.get()->StartObserving(Utf8ToWide(*arg_service_name));
     result->Success();
+    logger_->info("Setup tunnel completed - service already exists");
     return;
   }
   try {
     this->tunnel_service_ = std::make_unique<ServiceControl>(Utf8ToWide(*arg_service_name));
   } catch (const std::exception &e) {
+    logger_->error("Setup tunnel failed - ServiceControl init error: {}", e.what());
     result->Error("SERVICE_CONTROL_INIT_ERROR", std::string("Failed to initialize ServiceControl: ") + e.what());
     return;
   }
   this->connection_status_observer_.get()->StartObserving(Utf8ToWide(*arg_service_name));
 
   result->Success();
+  logger_->info("Setup tunnel completed successfully");
 }
 
 void WireguardDartPlugin::HandleConnect(const flutter::EncodableMap *args,
                                         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  logger_->info("Connect initiated");
   auto tunnel_service = this->tunnel_service_.get();
   if (tunnel_service == nullptr) {
+    logger_->error("Connect failed: tunnel service not initialized");
     result->Error("Invalid state: call 'setupTunnel' first");
     return;
   }
   const auto *cfg = std::get_if<std::string>(ValueOrNull(*args, "cfg"));
   if (cfg == NULL) {
+    logger_->error("Connect failed: cfg argument missing");
     result->Error("Argument 'cfg' is required");
     return;
   }
@@ -183,6 +213,7 @@ void WireguardDartPlugin::HandleConnect(const flutter::EncodableMap *args,
   try {
     wg_config_filename = WriteConfigToTempFile(*cfg);
   } catch (std::exception &e) {
+    logger_->error("Connect failed: could not write config file: {}", e.what());
     result->Error(std::string("Could not write wireguard config: ").append(e.what()));
     return;
   }
@@ -204,6 +235,7 @@ void WireguardDartPlugin::HandleConnect(const flutter::EncodableMap *args,
     csa.dependencies = L"Nsi\0TcpIp\0";
     tunnel_service->Create(csa);
   } catch (std::exception &e) {
+    logger_->error("Connect failed: service creation error: {}", e.what());
     result->Error(std::string(e.what()));
     return;
   }
@@ -214,6 +246,7 @@ void WireguardDartPlugin::HandleConnect(const flutter::EncodableMap *args,
     // Handle runtime errors with a specific error code and detailed message
     std::string error_message = "Runtime error while starting the tunnel service: ";
     error_message += e.what();
+    logger_->error("Connect failed: {}", error_message);
     result->Error("RUNTIME_ERROR", error_message);  // Error code: RUNTIME_ERROR
     return;
   } catch (const std::exception &e) {
@@ -225,6 +258,7 @@ void WireguardDartPlugin::HandleConnect(const flutter::EncodableMap *args,
       error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
       error_message += " Description: " + GetLastErrorAsString(error_code);
     }
+    logger_->error("Connect failed: {}", error_message);
     result->Error("SERVICE_EXCEPTION", error_message);  // Error code: SERVICE_EXCEPTION
     return;
   } catch (...) {
@@ -235,16 +269,20 @@ void WireguardDartPlugin::HandleConnect(const flutter::EncodableMap *args,
       error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
       error_message += " Description: " + GetLastErrorAsString(error_code);
     }
+    logger_->error("Connect failed: {}", error_message);
     result->Error("UNKNOWN_ERROR", error_message);  // Error code: UNKNOWN_ERROR
     return;
   }
   result->Success();
+  logger_->info("Connect completed successfully");
 }
 
 void WireguardDartPlugin::HandleDisconnect(const flutter::EncodableMap *args,
                                            std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  logger_->info("Disconnect initiated");
   auto tunnel_service = this->tunnel_service_.get();
   if (tunnel_service == nullptr) {
+    logger_->error("Disconnect failed: tunnel service not initialized");
     result->Error("Invalid state: call 'setupTunnel' first");
     return;
   }
@@ -255,6 +293,7 @@ void WireguardDartPlugin::HandleDisconnect(const flutter::EncodableMap *args,
     // Handle runtime errors with a specific error code and detailed message
     std::string error_message = "Runtime error while stopping the tunnel service: ";
     error_message += e.what();
+    logger_->error("Disconnect failed: {}", error_message);
     result->Error("RUNTIME_ERROR", error_message);  // Error code: RUNTIME_ERROR
     return;
   } catch (const std::exception &e) {
@@ -266,6 +305,7 @@ void WireguardDartPlugin::HandleDisconnect(const flutter::EncodableMap *args,
       error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
       error_message += " Description: " + GetLastErrorAsString(error_code);
     }
+    logger_->error("Disconnect failed: {}", error_message);
     result->Error("SERVICE_EXCEPTION", error_message);  // Error code: SERVICE_EXCEPTION
     return;
   } catch (...) {
@@ -276,24 +316,30 @@ void WireguardDartPlugin::HandleDisconnect(const flutter::EncodableMap *args,
       error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
       error_message += " Description: " + GetLastErrorAsString(error_code);
     }
+    logger_->error("Disconnect failed: {}", error_message);
     result->Error("UNKNOWN_ERROR", error_message);  // Error code: UNKNOWN_ERROR
     return;
   }
 
   result->Success();
+  logger_->info("Disconnect completed successfully");
 }
 
 void WireguardDartPlugin::HandleStatus(const flutter::EncodableMap *args,
                                        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  logger_->info("Status check initiated");
   auto tunnel_service = this->tunnel_service_.get();
   if (tunnel_service == nullptr) {
+    logger_->info("Status check completed - service not initialized, returning disconnected");
     return result->Success(ConnectionStatusToString(ConnectionStatus::disconnected));
   }
 
   try {
     auto status = tunnel_service->Status();
     result->Success(ConnectionStatusToString(status));
+    logger_->info("Status check completed - status: {}", ConnectionStatusToString(status));
   } catch (std::exception &e) {
+    logger_->error("Status check failed: {}", e.what());
     result->Error(std::string(e.what()));
   }
 }
