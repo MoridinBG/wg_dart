@@ -56,6 +56,11 @@ set_target_properties(${PLUGIN_NAME} PROPERTIES
   CXX_VISIBILITY_PRESET hidden)
 target_compile_definitions(${PLUGIN_NAME} PRIVATE FLUTTER_PLUGIN_IMPL)
 
+# Add UTF-8 support for spdlog
+if(MSVC)
+  target_compile_options(${PLUGIN_NAME} PRIVATE /utf-8)
+endif()
+
 # Source include directories and library dependencies. Add any plugin-specific
 # dependencies here.
 add_subdirectory(external)
@@ -79,10 +84,15 @@ set_target_properties(wireguard PROPERTIES
 target_include_directories(wireguard INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/lib/wireguard/include")
 target_link_libraries(${PLUGIN_NAME} PRIVATE wireguard)
 
+# Add spdlog as a header-only library
+target_include_directories(spdlog INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/lib")
+target_link_libraries(${PLUGIN_NAME} PRIVATE spdlog)
+
 target_include_directories(${PLUGIN_NAME} INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
   "${CMAKE_CURRENT_SOURCE_DIR}/lib/tunnel/include"
   "${CMAKE_CURRENT_SOURCE_DIR}/lib/wireguard/include"
+  "${CMAKE_CURRENT_SOURCE_DIR}/lib"
 )
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter flutter_wrapper_plugin)
 
