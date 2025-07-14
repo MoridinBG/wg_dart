@@ -36,6 +36,8 @@ list(APPEND PLUGIN_SOURCES
   "utils.h"
   "wireguard_library.cpp"
   "wireguard_library.h"
+  "wireguard_adapter.cpp"
+  "wireguard_adapter.h"
 )
 
 # Define the plugin library target. Its name must not be changed (see comment
