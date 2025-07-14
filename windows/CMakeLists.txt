@@ -34,6 +34,8 @@ list(APPEND PLUGIN_SOURCES
   "connection_status_observer.cpp"
   "utils.cpp"
   "utils.h"
+  "wireguard_library.cpp"
+  "wireguard_library.h"
 )
 
 # Define the plugin library target. Its name must not be changed (see comment
