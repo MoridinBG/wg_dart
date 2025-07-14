@@ -21,6 +21,8 @@
 #include "tunnel.h"
 #include "utils.h"
 #include "wireguard.h"
+#include "wireguard_adapter.h"
+#include "wireguard_library.h"
 
 // Declare the function prototype
 std::string GetLastErrorAsString(DWORD error_code);
@@ -136,14 +138,31 @@ void WireguardDartPlugin::HandleGenerateKeyPair(
 void WireguardDartPlugin::HandleCheckTunnelConfiguration(
     const flutter::EncodableMap *args, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   logger_->info("Check tunnel configuration initiated");
-  auto tunnel_service = this->tunnel_service_.get();
-  result->Success(flutter::EncodableValue(tunnel_service != nullptr));
-  logger_->info("Check tunnel configuration completed - service exists: {}", tunnel_service != nullptr);
+
+  // Check if we have any adapters created or if the service exists
+  bool has_adapter = !adapters_.empty() && adapters_.back() && adapters_.back()->IsValid();
+  bool has_service = this->tunnel_service_.get() != nullptr;
+  bool is_configured = has_adapter || has_service;
+
+  result->Success(flutter::EncodableValue(is_configured));
+  logger_->info("Check tunnel configuration completed - configured: {}, adapter: {}, service: {}", is_configured,
+                has_adapter, has_service);
 }
 
 void WireguardDartPlugin::HandleNativeInit(const flutter::EncodableMap *args,
                                            std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   logger_->info("Native init initiated");
+
+  // Initialize WireGuard library
+  wg_library_ = WireguardLibrary::Create();
+  if (wg_library_) {
+    logger_->info("WireGuard library loaded successfully");
+  } else {
+    logger_->error("Failed to load WireGuard library - adapter management will not be possible");
+    result->Error("Failed to load WireGuard library");
+    return;
+  }
+
   // Disable packet forwarding that conflicts with WireGuard
   ServiceControl remoteAccessService = ServiceControl(L"RemoteAccess");
   try {
@@ -173,24 +192,53 @@ void WireguardDartPlugin::HandleSetupTunnel(const flutter::EncodableMap *args,
     result->Error("Argument 'win32ServiceName' is required");
     return;
   }
-  if (this->tunnel_service_ != nullptr) {
-    // Ensure the observer is started even if the tunnel service already exists
-    this->connection_status_observer_.get()->StartObserving(Utf8ToWide(*arg_service_name));
-    result->Success();
-    logger_->info("Setup tunnel completed - service already exists");
+
+  std::wstring adapter_name = Utf8ToWide(*arg_service_name);
+
+  // Check if WireGuard library is available
+  if (!wg_library_ || !wg_library_->IsLoaded()) {
+    logger_->error("Setup tunnel failed: WireGuard library not available");
+    result->Error("WIREGUARD_LIBRARY_NOT_AVAILABLE", "WireGuard library is not loaded");
     return;
   }
-  try {
-    this->tunnel_service_ = std::make_unique<ServiceControl>(Utf8ToWide(*arg_service_name));
-  } catch (const std::exception &e) {
-    logger_->error("Setup tunnel failed - ServiceControl init error: {}", e.what());
-    result->Error("SERVICE_CONTROL_INIT_ERROR", std::string("Failed to initialize ServiceControl: ") + e.what());
-    return;
+
+  // Check if adapter already exists
+  for (const auto &adapter : adapters_) {
+    if (adapter && adapter->GetName() == adapter_name) {
+      logger_->info("Setup tunnel completed - adapter already exists: {}", *arg_service_name);
+      // Ensure the observer is started
+      this->connection_status_observer_.get()->StartObserving(adapter_name);
+      result->Success();
+      return;
+    }
   }
-  this->connection_status_observer_.get()->StartObserving(Utf8ToWide(*arg_service_name));
+
+  // Try to open existing adapter first
+  auto adapter = WireguardAdapter::Open(wg_library_, adapter_name);
+  if (!adapter) {
+    // If opening fails, create a new adapter
+    logger_->info("Creating new WireGuard adapter: {}", *arg_service_name);
+    adapter = WireguardAdapter::Create(wg_library_, adapter_name);
+    if (!adapter) {
+      DWORD error_code = GetLastError();
+      std::string error_message = "Failed to create WireGuard adapter: " + *arg_service_name;
+      if (error_code != 0) {
+        error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
+        error_message += " Description: " + GetLastErrorAsString(error_code);
+      }
+      logger_->error("Setup tunnel failed: {}", error_message);
+      result->Error("ADAPTER_CREATION_FAILED", error_message);
+      return;
+    }
+    logger_->info("WireGuard adapter created successfully: {}", *arg_service_name);
+  } else {
+    logger_->info("Opened existing WireGuard adapter: {}", *arg_service_name);
+  }
+
+  // Store the adapter
+  adapters_.push_back(std::move(adapter));
 
   result->Success();
-  logger_->info("Setup tunnel completed successfully");
 }
 
 void WireguardDartPlugin::HandleConnect(const flutter::EncodableMap *args,

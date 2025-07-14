@@ -6,9 +6,12 @@
 
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include "connection_status_observer.h"
 #include "service_control.h"
+#include "wireguard_adapter.h"
+#include "wireguard_library.h"
 
 namespace spdlog {
 class logger;
@@ -63,6 +66,9 @@ class WireguardDartPlugin : public flutter::Plugin {
   std::unique_ptr<ServiceControl> tunnel_service_;
   std::unique_ptr<ConnectionStatusObserver> connection_status_observer_;
   std::shared_ptr<spdlog::logger> logger_;
+
+  std::shared_ptr<WireguardLibrary> wg_library_;
+  std::vector<std::unique_ptr<WireguardAdapter>> adapters_;
 };
 
 }  // namespace wireguard_dart
