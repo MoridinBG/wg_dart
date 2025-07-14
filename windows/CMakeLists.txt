@@ -85,6 +85,7 @@ target_include_directories(wireguard INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/lib/
 target_link_libraries(${PLUGIN_NAME} PRIVATE wireguard)
 
 # Add spdlog as a header-only library
+add_library(spdlog INTERFACE)
 target_include_directories(spdlog INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/lib")
 target_link_libraries(${PLUGIN_NAME} PRIVATE spdlog)
 
