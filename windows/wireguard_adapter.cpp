@@ -1,6 +1,9 @@
 #include "wireguard_adapter.h"
 
 #include <stdexcept>
+#include <vector>
+
+#include "wireguard_config_parser.h"
 
 namespace wireguard_dart {
 
@@ -102,6 +105,40 @@ bool WireguardAdapter::SetLogging(WIREGUARD_ADAPTER_LOG_STATE log_state) {
   }
 
   return library_->SetAdapterLogging()(adapter_handle_, log_state) != FALSE;
+}
+
+bool WireguardAdapter::ApplyConfiguration(const std::string& config_text) {
+  if (!IsValid() || !library_->IsLoaded()) {
+    return false;
+  }
+
+  // Parse the configuration
+  WireguardConfigParser parser;
+  if (!parser.Parse(config_text)) {
+    return false;
+  }
+
+  // Calculate required buffer size
+  DWORD config_size = parser.CalculateConfigurationSize();
+  if (config_size == 0) {
+    return false;
+  }
+
+  // Allocate buffer and build configuration
+  std::vector<BYTE> config_buffer(config_size);
+  DWORD actual_size = parser.BuildConfiguration(config_buffer.data(), config_size);
+  if (actual_size == 0 || actual_size != config_size) {
+    return false;
+  }
+
+  // Apply configuration to adapter
+  const WIREGUARD_INTERFACE* config = reinterpret_cast<const WIREGUARD_INTERFACE*>(config_buffer.data());
+  if (!SetConfiguration(config, actual_size)) {
+    return false;
+  }
+
+  // Set adapter state to UP after successful configuration
+  return SetState(WIREGUARD_ADAPTER_STATE_UP);
 }
 
 }  // namespace wireguard_dart

@@ -48,6 +48,9 @@ class WireguardAdapter {
   bool GetLUID(NET_LUID* luid) const;
   bool SetLogging(WIREGUARD_ADAPTER_LOG_STATE log_state);
 
+  // Configuration helper
+  bool ApplyConfiguration(const std::string& config_text);
+
  private:
   WireguardAdapter(const std::shared_ptr<WireguardLibrary>& library, const std::wstring& name);
 

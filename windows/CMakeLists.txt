@@ -38,6 +38,8 @@ list(APPEND PLUGIN_SOURCES
   "wireguard_library.h"
   "wireguard_adapter.cpp"
   "wireguard_adapter.h"
+  "wireguard_config_parser.cpp"
+  "wireguard_config_parser.h"
 )
 
 # Define the plugin library target. Its name must not be changed (see comment
@@ -99,7 +101,7 @@ target_include_directories(${PLUGIN_NAME} INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/lib/wireguard/include"
   "${CMAKE_CURRENT_SOURCE_DIR}/lib"
 )
-target_link_libraries(${PLUGIN_NAME} PRIVATE flutter flutter_wrapper_plugin)
+target_link_libraries(${PLUGIN_NAME} PRIVATE flutter flutter_wrapper_plugin ws2_32 iphlpapi)
 
 # List of absolute paths to libraries that should be bundled with the plugin.
 # This list could contain prebuilt libraries, or libraries created by an
