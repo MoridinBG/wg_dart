@@ -112,18 +112,18 @@ void main() {
     });
 
     test('should disconnect successfully', () async {
-      when(mockWireGuardDartPlatform.disconnect()).thenAnswer((_) async => Future.value());
+      when(mockWireGuardDartPlatform.disconnect(win32ServiceName: anyNamed('win32ServiceName'))).thenAnswer((_) async => Future.value());
 
-      await wireguardDart.disconnect();
+      await wireguardDart.disconnect(win32ServiceName: 'win32ServiceName');
 
-      verify(mockWireGuardDartPlatform.disconnect()).called(1);
+      verify(mockWireGuardDartPlatform.disconnect(win32ServiceName: 'win32ServiceName')).called(1);
     });
 
     test('should handle error when disconnecting', () async {
-      when(mockWireGuardDartPlatform.disconnect()).thenThrow(Exception('Failed to disconnect'));
+      when(mockWireGuardDartPlatform.disconnect(win32ServiceName: anyNamed('win32ServiceName'))).thenThrow(Exception('Failed to disconnect'));
 
-      expect(() => wireguardDart.disconnect(), throwsException);
-      verify(mockWireGuardDartPlatform.disconnect()).called(1);
+      expect(() => wireguardDart.disconnect(win32ServiceName: 'win32ServiceName'), throwsException);
+      verify(mockWireGuardDartPlatform.disconnect(win32ServiceName: 'win32ServiceName')).called(1);
     });
 
     test('should get status successfully', () async {
@@ -228,10 +228,11 @@ void main() {
   });
 
   test('should throw not implemented exception for disconnect', () async {
-    when(mockWireGuardDartPlatform.disconnect()).thenThrow(UnimplementedError('disconnect not implemented'));
+    when(mockWireGuardDartPlatform.disconnect(win32ServiceName: anyNamed('win32ServiceName')))
+        .thenThrow(UnimplementedError('disconnect not implemented'));
 
-    expect(() => wireguardDart.disconnect(), throwsA(isA<UnimplementedError>()));
-    verify(mockWireGuardDartPlatform.disconnect()).called(1);
+    expect(() => wireguardDart.disconnect(win32ServiceName: 'win32ServiceName'), throwsA(isA<UnimplementedError>()));
+    verify(mockWireGuardDartPlatform.disconnect(win32ServiceName: 'win32ServiceName')).called(1);
   });
 
   test('should throw not implemented exception for status', () async {
