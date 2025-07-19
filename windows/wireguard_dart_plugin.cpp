@@ -174,22 +174,6 @@ void WireguardDartPlugin::HandleNativeInit(const flutter::EncodableMap *args,
     return;
   }
 
-  // Disable packet forwarding that conflicts with WireGuard
-  ServiceControl remoteAccessService = ServiceControl(L"RemoteAccess");
-  try {
-    remoteAccessService.Stop();
-  } catch (std::exception &e) {
-    logger_->error("Failed to stop RemoteAccess service: {}", e.what());
-    result->Error(std::string("Could not stop packet forwarding: ").append(e.what()));
-    return;
-  }
-  try {
-    remoteAccessService.Disable();
-  } catch (std::exception &e) {
-    logger_->error("Failed to disable RemoteAccess service: {}", e.what());
-    result->Error(std::string("Could not disable packet forwarding: ").append(e.what()));
-    return;
-  }
   result->Success();
   logger_->info("Native init completed successfully");
 }
