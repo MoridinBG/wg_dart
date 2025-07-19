@@ -121,7 +121,8 @@ void NetworkAdapterStatusObserver::HandleInterfaceChange(const NET_LUID &luid,
 
   if (found_adapter.has_value()) {
     std::string status = GetInterfaceStatus(luid);
-    logger_->info("Interface change for adapter LUID {}: {} -> {}", luid.Value, notification_type, status);
+    logger_->info("Interface change for adapter LUID {}: {} -> {}", luid.Value, static_cast<int>(notification_type),
+                  status);
     NotifyStatusChange(luid, status);
   }
 }
