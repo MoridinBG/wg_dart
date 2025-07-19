@@ -193,7 +193,7 @@ class _MyAppState extends State<MyApp> {
 
   void disconnect() async {
     try {
-      await _wireguardDartPlugin.disconnect();
+      await _wireguardDartPlugin.disconnect(win32ServiceName: winSvcName);
       debugPrint("Disconnect success");
       showSnackbar(
         "Disconnect success",
