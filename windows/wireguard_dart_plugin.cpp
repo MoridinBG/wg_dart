@@ -9,6 +9,7 @@
 #include <libbase64.h>
 #include <windows.h>
 
+#include <algorithm>
 #include <memory>
 #include <sstream>
 
@@ -77,6 +78,15 @@ WireguardDartPlugin::WireguardDartPlugin() {
 }
 
 WireguardDartPlugin::~WireguardDartPlugin() { this->connection_status_observer_.get()->StopObserving(); }
+
+WireguardAdapter *WireguardDartPlugin::FindAdapterByName(const std::wstring &adapter_name) {
+  auto adapter_it = std::find_if(adapters_.begin(), adapters_.end(),
+                                 [&adapter_name](const std::unique_ptr<WireguardAdapter> &adapter) {
+                                   return adapter && adapter->GetName() == adapter_name;
+                                 });
+
+  return (adapter_it != adapters_.end()) ? adapter_it->get() : nullptr;
+}
 
 std::optional<WireguardMethod> WireguardDartPlugin::GetMethodFromString(const std::string &method_name) {
   if (method_name == "generateKeyPair") return WireguardMethod::GENERATE_KEY_PAIR;
@@ -204,14 +214,12 @@ void WireguardDartPlugin::HandleSetupTunnel(const flutter::EncodableMap *args,
   }
 
   // Check if adapter already exists
-  for (const auto &adapter : adapters_) {
-    if (adapter && adapter->GetName() == adapter_name) {
-      logger_->info("Setup tunnel completed - adapter already exists: {}", *arg_service_name);
-      // Ensure the observer is started
-      this->connection_status_observer_.get()->StartObserving(adapter_name);
-      result->Success();
-      return;
-    }
+  if (FindAdapterByName(adapter_name)) {
+    logger_->info("Setup tunnel completed - adapter already exists: {}", *arg_service_name);
+    // Ensure the observer is started
+    this->connection_status_observer_.get()->StartObserving(adapter_name);
+    result->Success();
+    return;
   }
 
   // Try to open existing adapter first
@@ -263,14 +271,7 @@ void WireguardDartPlugin::HandleConnect(const flutter::EncodableMap *args,
 
   // Find the adapter by name
   std::wstring adapter_name = Utf8ToWide(*arg_service_name);
-  WireguardAdapter *target_adapter = nullptr;
-
-  for (const auto &adapter : adapters_) {
-    if (adapter && adapter->GetName() == adapter_name) {
-      target_adapter = adapter.get();
-      break;
-    }
-  }
+  WireguardAdapter *target_adapter = FindAdapterByName(adapter_name);
 
   if (!target_adapter) {
     logger_->error("Connect failed: adapter not found: {}", *arg_service_name);
@@ -341,14 +342,7 @@ void WireguardDartPlugin::HandleDisconnect(const flutter::EncodableMap *args,
 
   // Find the adapter by name
   std::wstring adapter_name = Utf8ToWide(*arg_service_name);
-  WireguardAdapter *target_adapter = nullptr;
-
-  for (const auto &adapter : adapters_) {
-    if (adapter && adapter->GetName() == adapter_name) {
-      target_adapter = adapter.get();
-      break;
-    }
-  }
+  WireguardAdapter *target_adapter = FindAdapterByName(adapter_name);
 
   if (!target_adapter) {
     logger_->error("Disconnect failed: adapter not found: {}", *arg_service_name);
@@ -419,14 +413,7 @@ void WireguardDartPlugin::HandleStatus(const flutter::EncodableMap *args,
 
   // Find the adapter by name
   std::wstring adapter_name = Utf8ToWide(*arg_service_name);
-  WireguardAdapter *target_adapter = nullptr;
-
-  for (const auto &adapter : adapters_) {
-    if (adapter && adapter->GetName() == adapter_name) {
-      target_adapter = adapter.get();
-      break;
-    }
-  }
+  WireguardAdapter *target_adapter = FindAdapterByName(adapter_name);
 
   if (!target_adapter) {
     logger_->info("Status check completed - adapter not found, returning disconnected");

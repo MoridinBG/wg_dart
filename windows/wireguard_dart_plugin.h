@@ -63,6 +63,9 @@ class WireguardDartPlugin : public flutter::Plugin {
   void HandleStatus(const flutter::EncodableMap* args,
                     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
+  // Helper method to find adapter by name
+  WireguardAdapter* FindAdapterByName(const std::wstring& adapter_name);
+
   std::unique_ptr<ServiceControl> tunnel_service_;
   std::unique_ptr<ConnectionStatusObserver> connection_status_observer_;
   std::shared_ptr<spdlog::logger> logger_;
