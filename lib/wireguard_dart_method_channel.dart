@@ -61,8 +61,10 @@ class MethodChannelWireguardDart extends WireguardDartPlatform {
   }
 
   @override
-  Future<void> disconnect() async {
-    await methodChannel.invokeMethod<void>(WireguardMethodChannelMethod.disconnect.value);
+  Future<void> disconnect({required String win32ServiceName}) async {
+    await methodChannel.invokeMethod<void>(WireguardMethodChannelMethod.disconnect.value, {
+      'win32ServiceName': win32ServiceName,
+    });
   }
 
   @override

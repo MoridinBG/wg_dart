@@ -35,8 +35,8 @@ class WireguardDart {
     );
   }
 
-  Future<void> disconnect() {
-    return WireguardDartPlatform.instance.disconnect();
+  Future<void> disconnect({required String win32ServiceName}) {
+    return WireguardDartPlatform.instance.disconnect(win32ServiceName: win32ServiceName);
   }
 
   Future<ConnectionStatus> status() {
