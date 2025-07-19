@@ -32,6 +32,8 @@ list(APPEND PLUGIN_SOURCES
   "connection_status.cpp"
   "connection_status_observer.h"
   "connection_status_observer.cpp"
+  "network_adapter_status_observer.h"
+  "network_adapter_status_observer.cpp"
   "utils.cpp"
   "utils.h"
   "wireguard_library.cpp"
@@ -94,6 +96,11 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE wireguard)
 add_library(spdlog INTERFACE)
 target_include_directories(spdlog INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/lib")
 target_link_libraries(${PLUGIN_NAME} PRIVATE spdlog)
+
+# Disable warnings as errors for spdlog unreachable code warnings
+if(MSVC)
+  target_compile_options(${PLUGIN_NAME} PRIVATE /wd4702) # disable unreachable code warning
+endif()
 
 target_include_directories(${PLUGIN_NAME} INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
