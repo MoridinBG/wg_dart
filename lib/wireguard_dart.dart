@@ -13,14 +13,26 @@ class WireguardDart {
     return WireguardDartPlatform.instance.nativeInit();
   }
 
-  Future<void> setupTunnel(
-      {required String bundleId, required String tunnelName, String? win32ServiceName}) {
+  Future<void> setupTunnel({
+    required String bundleId,
+    required String tunnelName,
+    required String win32ServiceName,
+  }) {
     return WireguardDartPlatform.instance.setupTunnel(
-        bundleId: bundleId, tunnelName: tunnelName, win32ServiceName: win32ServiceName);
+      bundleId: bundleId,
+      tunnelName: tunnelName,
+      win32ServiceName: win32ServiceName,
+    );
   }
 
-  Future<void> connect({required String cfg}) {
-    return WireguardDartPlatform.instance.connect(cfg: cfg);
+  Future<void> connect({
+    required String cfg,
+    required String win32ServiceName,
+  }) {
+    return WireguardDartPlatform.instance.connect(
+      cfg: cfg,
+      win32ServiceName: win32ServiceName,
+    );
   }
 
   Future<void> disconnect() {

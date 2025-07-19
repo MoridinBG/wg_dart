@@ -139,8 +139,7 @@ class _MyAppState extends State<MyApp> {
 
   void setupTunnel() async {
     try {
-      await _wireguardDartPlugin.setupTunnel(
-          bundleId: tunBundleId, tunnelName: "WiregardDart", win32ServiceName: winSvcName);
+      await _wireguardDartPlugin.setupTunnel(bundleId: tunBundleId, tunnelName: "WiregardDart", win32ServiceName: winSvcName);
       setState(() {
         _isTunnelSetup = true;
       });
@@ -167,7 +166,11 @@ class _MyAppState extends State<MyApp> {
   void connect() async {
     try {
       // replace with valid config file before running
-      await _wireguardDartPlugin.connect(cfg: """""");
+      await _wireguardDartPlugin.connect(
+        cfg: """
+""",
+        win32ServiceName: winSvcName,
+      );
       debugPrint("Connect success");
       showSnackbar(
         "Connect success",
@@ -210,8 +213,7 @@ class _MyAppState extends State<MyApp> {
 
   void removeTunnelConfiguration() async {
     try {
-      await _wireguardDartPlugin.removeTunnelConfiguration(
-          bundleId: tunBundleId, tunnelName: "WiregardDart");
+      await _wireguardDartPlugin.removeTunnelConfiguration(bundleId: tunBundleId, tunnelName: "WiregardDart");
       debugPrint("Remove tunnel configuration success");
       showSnackbar(
         "Remove tunnel configuration success",
@@ -273,8 +275,7 @@ class _MyAppState extends State<MyApp> {
       var stats = await _wireguardDartPlugin.getTunnelStatistics();
       if (prevStats != null && stats != null) {
         uploadSpeedKBs = ((stats.totalUpload - prevStats.totalUpload) / interval.inSeconds) / 1024;
-        downloadSpeedKBs =
-            ((stats.totalDownload - prevStats.totalDownload) / interval.inSeconds) / 1024;
+        downloadSpeedKBs = ((stats.totalDownload - prevStats.totalDownload) / interval.inSeconds) / 1024;
       }
       yield _lastTunnelStatistics = stats!;
     }
@@ -302,11 +303,9 @@ class _MyAppState extends State<MyApp> {
                       onPressed: generateKey,
                       style: ButtonStyle(
                           minimumSize: WidgetStateProperty.all<Size>(const Size(100, 50)),
-                          padding:
-                              WidgetStateProperty.all(const EdgeInsets.fromLTRB(20, 15, 20, 15)),
+                          padding: WidgetStateProperty.all(const EdgeInsets.fromLTRB(20, 15, 20, 15)),
                           backgroundColor: WidgetStateProperty.all<Color>(Colors.blueAccent),
-                          overlayColor:
-                              WidgetStateProperty.all<Color>(Colors.white.withValues(alpha: 0.1))),
+                          overlayColor: WidgetStateProperty.all<Color>(Colors.white.withValues(alpha: 0.1))),
                       child: const Text(
                         'Generate Key',
                         style: TextStyle(color: Colors.white),
@@ -317,11 +316,9 @@ class _MyAppState extends State<MyApp> {
                         onPressed: nativeInit,
                         style: ButtonStyle(
                             minimumSize: WidgetStateProperty.all<Size>(const Size(100, 50)),
-                            padding:
-                                WidgetStateProperty.all(const EdgeInsets.fromLTRB(20, 15, 20, 15)),
+                            padding: WidgetStateProperty.all(const EdgeInsets.fromLTRB(20, 15, 20, 15)),
                             backgroundColor: WidgetStateProperty.all<Color>(Colors.blueAccent),
-                            overlayColor: WidgetStateProperty.all<Color>(
-                                Colors.white.withValues(alpha: 0.1))),
+                            overlayColor: WidgetStateProperty.all<Color>(Colors.white.withValues(alpha: 0.1))),
                         child: const Text(
                           'Native initialization',
                           style: TextStyle(color: Colors.white),
@@ -331,11 +328,9 @@ class _MyAppState extends State<MyApp> {
                       onPressed: checkTunnelConfiguration,
                       style: ButtonStyle(
                           minimumSize: WidgetStateProperty.all<Size>(const Size(100, 50)),
-                          padding:
-                              WidgetStateProperty.all(const EdgeInsets.fromLTRB(20, 15, 20, 15)),
+                          padding: WidgetStateProperty.all(const EdgeInsets.fromLTRB(20, 15, 20, 15)),
                           backgroundColor: WidgetStateProperty.all<Color>(Colors.blueAccent),
-                          overlayColor:
-                              WidgetStateProperty.all<Color>(Colors.white.withValues(alpha: 0.1))),
+                          overlayColor: WidgetStateProperty.all<Color>(Colors.white.withValues(alpha: 0.1))),
                       child: const Text(
                         'Is Tunnel Configured',
                         style: TextStyle(color: Colors.white),
@@ -345,11 +340,9 @@ class _MyAppState extends State<MyApp> {
                       onPressed: setupTunnel,
                       style: ButtonStyle(
                           minimumSize: WidgetStateProperty.all<Size>(const Size(100, 50)),
-                          padding:
-                              WidgetStateProperty.all(const EdgeInsets.fromLTRB(20, 15, 20, 15)),
+                          padding: WidgetStateProperty.all(const EdgeInsets.fromLTRB(20, 15, 20, 15)),
                           backgroundColor: WidgetStateProperty.all<Color>(Colors.blueAccent),
-                          overlayColor:
-                              WidgetStateProperty.all<Color>(Colors.white.withValues(alpha: 0.1))),
+                          overlayColor: WidgetStateProperty.all<Color>(Colors.white.withValues(alpha: 0.1))),
                       child: const Text(
                         'Setup Tunnel',
                         style: TextStyle(color: Colors.white),
@@ -359,11 +352,9 @@ class _MyAppState extends State<MyApp> {
                       onPressed: connect,
                       style: ButtonStyle(
                           minimumSize: WidgetStateProperty.all<Size>(const Size(100, 50)),
-                          padding:
-                              WidgetStateProperty.all(const EdgeInsets.fromLTRB(20, 15, 20, 15)),
+                          padding: WidgetStateProperty.all(const EdgeInsets.fromLTRB(20, 15, 20, 15)),
                           backgroundColor: WidgetStateProperty.all<Color>(Colors.blueAccent),
-                          overlayColor:
-                              WidgetStateProperty.all<Color>(Colors.white.withValues(alpha: 0.1))),
+                          overlayColor: WidgetStateProperty.all<Color>(Colors.white.withValues(alpha: 0.1))),
                       child: const Text(
                         'Connect',
                         style: TextStyle(color: Colors.white),
@@ -373,11 +364,9 @@ class _MyAppState extends State<MyApp> {
                       onPressed: disconnect,
                       style: ButtonStyle(
                           minimumSize: WidgetStateProperty.all<Size>(const Size(100, 50)),
-                          padding:
-                              WidgetStateProperty.all(const EdgeInsets.fromLTRB(20, 15, 20, 15)),
+                          padding: WidgetStateProperty.all(const EdgeInsets.fromLTRB(20, 15, 20, 15)),
                           backgroundColor: WidgetStateProperty.all<Color>(Colors.blueAccent),
-                          overlayColor:
-                              WidgetStateProperty.all<Color>(Colors.white.withValues(alpha: 0.1))),
+                          overlayColor: WidgetStateProperty.all<Color>(Colors.white.withValues(alpha: 0.1))),
                       child: const Text(
                         'Disconnect',
                         style: TextStyle(color: Colors.white),
@@ -388,11 +377,9 @@ class _MyAppState extends State<MyApp> {
                         onPressed: removeTunnelConfiguration,
                         style: ButtonStyle(
                             minimumSize: WidgetStateProperty.all<Size>(const Size(100, 50)),
-                            padding:
-                                WidgetStateProperty.all(const EdgeInsets.fromLTRB(20, 15, 20, 15)),
+                            padding: WidgetStateProperty.all(const EdgeInsets.fromLTRB(20, 15, 20, 15)),
                             backgroundColor: WidgetStateProperty.all<Color>(Colors.blueAccent),
-                            overlayColor: WidgetStateProperty.all<Color>(
-                                Colors.white.withValues(alpha: 0.1))),
+                            overlayColor: WidgetStateProperty.all<Color>(Colors.white.withValues(alpha: 0.1))),
                         child: const Text(
                           'Remove tunnel configuration',
                           style: TextStyle(color: Colors.white),
@@ -402,11 +389,9 @@ class _MyAppState extends State<MyApp> {
                       onPressed: status,
                       style: ButtonStyle(
                           minimumSize: WidgetStateProperty.all<Size>(const Size(100, 50)),
-                          padding:
-                              WidgetStateProperty.all(const EdgeInsets.fromLTRB(20, 15, 20, 15)),
+                          padding: WidgetStateProperty.all(const EdgeInsets.fromLTRB(20, 15, 20, 15)),
                           backgroundColor: WidgetStateProperty.all<Color>(Colors.blueAccent),
-                          overlayColor:
-                              WidgetStateProperty.all<Color>(Colors.white.withValues(alpha: 0.1))),
+                          overlayColor: WidgetStateProperty.all<Color>(Colors.white.withValues(alpha: 0.1))),
                       child: const Text(
                         'Query status',
                         style: TextStyle(color: Colors.white),
@@ -416,11 +401,9 @@ class _MyAppState extends State<MyApp> {
                       onPressed: getTunnelStatistics,
                       style: ButtonStyle(
                           minimumSize: WidgetStateProperty.all<Size>(const Size(100, 50)),
-                          padding:
-                              WidgetStateProperty.all(const EdgeInsets.fromLTRB(20, 15, 20, 15)),
+                          padding: WidgetStateProperty.all(const EdgeInsets.fromLTRB(20, 15, 20, 15)),
                           backgroundColor: WidgetStateProperty.all<Color>(Colors.blueAccent),
-                          overlayColor:
-                              WidgetStateProperty.all<Color>(Colors.white.withValues(alpha: 0.1))),
+                          overlayColor: WidgetStateProperty.all<Color>(Colors.white.withValues(alpha: 0.1))),
                       child: const Text(
                         'Get tunnel statistics',
                         style: TextStyle(color: Colors.white),
@@ -442,18 +425,14 @@ class _MyAppState extends State<MyApp> {
                     }),
                 Text('Tunnel configured: $_checkTunnelConfiguration'),
                 Text('Tunnel setup: $_isTunnelSetup'),
-                Text(
-                    'Key pair:\n Public key:${_keyPair?.publicKey}\n Private key:${_keyPair?.privateKey}'),
+                Text('Key pair:\n Public key:${_keyPair?.publicKey}\n Private key:${_keyPair?.privateKey}'),
                 StreamBuilder<TunnelStatistics>(
-                    initialData: const TunnelStatistics(
-                        latestHandshake: 0, totalDownload: 0, totalUpload: 0),
+                    initialData: const TunnelStatistics(latestHandshake: 0, totalDownload: 0, totalUpload: 0),
                     stream: _tunnelStatisticsStream,
                     builder: (BuildContext context, AsyncSnapshot<TunnelStatistics> snapshot) {
                       // Check if the snapshot has data and is a map containing the 'status' key
                       if (snapshot.hasData) {
-                        final handshakeTime = DateTime.fromMillisecondsSinceEpoch(
-                                snapshot.data!.latestHandshake.toInt())
-                            .toLocal();
+                        final handshakeTime = DateTime.fromMillisecondsSinceEpoch(snapshot.data!.latestHandshake.toInt()).toLocal();
                         return Text(
                           """Tunnel statistics:
                         Latest handshake: $handshakeTime
