@@ -2,6 +2,7 @@
 #define WIREGUARD_DART_CONNECTION_STATUS_H
 
 #include <windows.h>
+#include <ifdef.h>
 
 #include <string>
 
@@ -13,6 +14,8 @@ std::string ConnectionStatusToString(const ConnectionStatus status);
 
 ConnectionStatus ConnectionStatusFromWinSvcState(DWORD dwCurrentState);
 
-}  // namespace wireguard_dart
+ConnectionStatus ConnectionStatusFromIfOperStatus(IF_OPER_STATUS operStatus);
+
+} // namespace wireguard_dart
 
 #endif
