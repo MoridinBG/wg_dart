@@ -12,8 +12,6 @@ enum ConnectionStatus { connected, disconnected, connecting, disconnecting, unkn
 
 std::string ConnectionStatusToString(const ConnectionStatus status);
 
-ConnectionStatus ConnectionStatusFromWinSvcState(DWORD dwCurrentState);
-
 ConnectionStatus ConnectionStatusFromIfOperStatus(IF_OPER_STATUS operStatus);
 
 } // namespace wireguard_dart
