@@ -11,6 +11,11 @@
 #include <memory>
 #include <sstream>
 
+// Windows networking includes
+#include <iphlpapi.h>
+#include <netioapi.h>
+#pragma comment(lib, "iphlpapi.lib")
+
 #include "connection_status.h"
 #include "key_generator.h"
 #include "network_adapter_status_observer.h"
@@ -24,6 +29,12 @@
 
 // Declare the function prototype
 std::string GetLastErrorAsString(DWORD error_code);
+
+// Helper functions for Windows network configuration
+bool ConfigureAdapterIPAddress(NET_LUID luid, const std::vector<WIREGUARD_ALLOWED_IP>& addresses);
+bool AddRouteForAllowedIPs(NET_LUID luid, const std::vector<WIREGUARD_ALLOWED_IP>& allowed_ips);
+bool RemoveAdapterIPAddresses(NET_LUID luid);
+bool RemoveRoutesForAdapter(NET_LUID luid);
 
 namespace wireguard_dart {
 
@@ -219,7 +230,7 @@ void WireguardDartPlugin::HandleSetupTunnel(const flutter::EncodableMap *args,
   if (!adapter) {
     // If opening fails, create a new adapter
     logger_->info("Creating new WireGuard adapter: {}", *arg_service_name);
-    adapter = WireguardAdapter::Create(wg_library_, adapter_name);
+    adapter = WireguardAdapter::Create(wg_library_, adapter_name, L"WireGuard");
     if (!adapter) {
       DWORD error_code = GetLastError();
       std::string error_message = "Failed to create WireGuard adapter: " + *arg_service_name;
@@ -293,6 +304,58 @@ void WireguardDartPlugin::HandleConnect(const flutter::EncodableMap *args,
       logger_->error("Connect failed: {}", error_message);
       result->Error("CONFIGURATION_FAILED", error_message);
       return;
+    }
+    
+    // Parse the configuration to extract interface addresses and peer allowed IPs for routing
+    WireguardConfigParser parser;
+    if (!parser.Parse(*cfg)) {
+      logger_->error("Connect failed: unable to parse configuration for network setup");
+      result->Error("CONFIGURATION_PARSE_FAILED", "Failed to parse configuration for network setup");
+      return;
+    }
+    
+    // Configure Windows networking for the adapter
+    NET_LUID luid;
+    if (target_adapter->GetLUID(&luid)) {
+      // Configure IP addresses from the interface section
+      const auto& interface_config = parser.GetInterface();
+      if (!interface_config.addresses.empty()) {
+        logger_->info("Configuring IP addresses for adapter");
+        if (!ConfigureAdapterIPAddress(luid, interface_config.addresses)) {
+          DWORD error_code = GetLastError();
+          std::string error_message = "Failed to configure IP addresses on adapter";
+          if (error_code != 0) {
+            error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
+            error_message += " Description: " + GetLastErrorAsString(error_code);
+          }
+          logger_->error("Connect failed: {}", error_message);
+          result->Error("IP_CONFIGURATION_FAILED", error_message);
+          return;
+        }
+        logger_->info("Successfully configured IP addresses");
+      }
+      
+      // Add routes for peer allowed IPs
+      const auto& peers = parser.GetPeers();
+      for (const auto& peer : peers) {
+        if (!peer.allowed_ips.empty()) {
+          logger_->info("Configuring routes for peer allowed IPs");
+          if (!AddRouteForAllowedIPs(luid, peer.allowed_ips)) {
+            DWORD error_code = GetLastError();
+            std::string error_message = "Failed to configure routes for peer allowed IPs";
+            if (error_code != 0) {
+              error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
+              error_message += " Description: " + GetLastErrorAsString(error_code);
+            }
+            logger_->warn("Connect warning: {} (continuing anyway)", error_message);
+            // Don't fail the connection for routing issues, just warn
+          } else {
+            logger_->info("Successfully configured routes for peer allowed IPs");
+          }
+        }
+      }
+    } else {
+      logger_->warn("Connect warning: unable to get adapter LUID for network configuration");
     }
   } catch (const std::exception &e) {
     DWORD error_code = GetLastError();
@@ -397,6 +460,35 @@ void WireguardDartPlugin::HandleDisconnect(const flutter::EncodableMap *args,
   // Stop observing this specific adapter
   NET_LUID luid;
   if (target_adapter->GetLUID(&luid)) {
+    // Clean up network configuration
+    logger_->info("Cleaning up network configuration for adapter");
+    
+    // Remove IP addresses (this will also clean up associated routes automatically)
+    if (!RemoveAdapterIPAddresses(luid)) {
+      DWORD error_code = GetLastError();
+      std::string error_message = "Warning: Failed to remove IP addresses from adapter";
+      if (error_code != 0) {
+        error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
+        error_message += " Description: " + GetLastErrorAsString(error_code);
+      }
+      logger_->warn("Disconnect warning: {} (continuing anyway)", error_message);
+    } else {
+      logger_->info("Successfully cleaned up IP addresses");
+    }
+    
+    // Remove any remaining routes associated with this adapter
+    if (!RemoveRoutesForAdapter(luid)) {
+      DWORD error_code = GetLastError();
+      std::string error_message = "Warning: Failed to remove routes for adapter";  
+      if (error_code != 0) {
+        error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
+        error_message += " Description: " + GetLastErrorAsString(error_code);
+      }
+      logger_->warn("Disconnect warning: {} (continuing anyway)", error_message);
+    } else {
+      logger_->info("Successfully cleaned up routes");
+    }
+    
     this->network_adapter_observer_->StopObserving(luid);
   }
 
@@ -465,4 +557,127 @@ std::string GetLastErrorAsString(DWORD error_code) {
     message = "Unknown error code: " + std::to_string(error_code);
   }
   return message;
+}
+
+// Helper function to configure IP addresses on the adapter
+bool ConfigureAdapterIPAddress(NET_LUID luid, const std::vector<WIREGUARD_ALLOWED_IP>& addresses) {
+  for (const auto& addr : addresses) {
+    MIB_UNICASTIPADDRESS_ROW row;
+    InitializeUnicastIpAddressEntry(&row);
+    
+    row.InterfaceLuid = luid;
+    row.DadState = IpDadStatePreferred;
+    row.ValidLifetime = 0xffffffff; // INFINITE
+    row.PreferredLifetime = 0xffffffff; // INFINITE
+    row.OnLinkPrefixLength = addr.Cidr;
+    
+    if (addr.AddressFamily == AF_INET) {
+      row.Address.Ipv4.sin_family = AF_INET;
+      row.Address.Ipv4.sin_addr = addr.Address.V4;
+    } else if (addr.AddressFamily == AF_INET6) {
+      row.Address.Ipv6.sin6_family = AF_INET6;
+      row.Address.Ipv6.sin6_addr = addr.Address.V6;
+    } else {
+      continue; // Skip unsupported address families
+    }
+    
+    DWORD result = CreateUnicastIpAddressEntry(&row);
+    if (result != NO_ERROR && result != ERROR_OBJECT_ALREADY_EXISTS) {
+      SetLastError(result);
+      return false;
+    }
+  }
+  return true;
+}
+
+// Helper function to add routes for allowed IPs
+bool AddRouteForAllowedIPs(NET_LUID luid, const std::vector<WIREGUARD_ALLOWED_IP>& allowed_ips) {
+  for (const auto& allowed_ip : allowed_ips) {
+    MIB_IPFORWARD_ROW2 route;
+    InitializeIpForwardEntry(&route);
+    
+    route.InterfaceLuid = luid;
+    route.Protocol = MIB_IPPROTO_LOCAL;
+    route.Metric = 0; // Use default metric
+    route.Age = 0;
+    route.ValidLifetime = 0xffffffff; // INFINITE
+    route.PreferredLifetime = 0xffffffff; // INFINITE
+    
+    if (allowed_ip.AddressFamily == AF_INET) {
+      route.DestinationPrefix.Prefix.Ipv4.sin_family = AF_INET;
+      route.DestinationPrefix.Prefix.Ipv4.sin_addr = allowed_ip.Address.V4;
+      route.DestinationPrefix.PrefixLength = allowed_ip.Cidr;
+      
+      // Set next hop to unspecified (0.0.0.0) for direct routing
+      route.NextHop.Ipv4.sin_family = AF_INET;
+      route.NextHop.Ipv4.sin_addr.s_addr = 0;
+    } else if (allowed_ip.AddressFamily == AF_INET6) {
+      route.DestinationPrefix.Prefix.Ipv6.sin6_family = AF_INET6;
+      route.DestinationPrefix.Prefix.Ipv6.sin6_addr = allowed_ip.Address.V6;
+      route.DestinationPrefix.PrefixLength = allowed_ip.Cidr;
+      
+      // Set next hop to unspecified (::) for direct routing  
+      route.NextHop.Ipv6.sin6_family = AF_INET6;
+      memset(&route.NextHop.Ipv6.sin6_addr, 0, sizeof(route.NextHop.Ipv6.sin6_addr));
+    } else {
+      continue; // Skip unsupported address families
+    }
+    
+    DWORD result = CreateIpForwardEntry2(&route);
+    if (result != NO_ERROR && result != ERROR_OBJECT_ALREADY_EXISTS) {
+      SetLastError(result);
+      return false;
+    }
+  }
+  return true;
+}
+
+// Helper function to remove IP addresses from adapter
+bool RemoveAdapterIPAddresses(NET_LUID luid) {
+  PMIB_UNICASTIPADDRESS_TABLE table = nullptr;
+  
+  DWORD result = GetUnicastIpAddressTable(AF_UNSPEC, &table);
+  if (result != NO_ERROR) {
+    SetLastError(result);
+    return false;
+  }
+  
+  bool success = true;
+  for (ULONG i = 0; i < table->NumEntries; i++) {
+    if (table->Table[i].InterfaceLuid.Value == luid.Value) {
+      DWORD delete_result = DeleteUnicastIpAddressEntry(&table->Table[i]);
+      if (delete_result != NO_ERROR && delete_result != ERROR_NOT_FOUND) {
+        success = false;
+        SetLastError(delete_result);
+      }
+    }
+  }
+  
+  FreeMibTable(table);
+  return success;
+}
+
+// Helper function to remove routes for adapter  
+bool RemoveRoutesForAdapter(NET_LUID luid) {
+  PMIB_IPFORWARD_TABLE2 table = nullptr;
+  
+  DWORD result = GetIpForwardTable2(AF_UNSPEC, &table);
+  if (result != NO_ERROR) {
+    SetLastError(result);
+    return false;
+  }
+  
+  bool success = true;
+  for (ULONG i = 0; i < table->NumEntries; i++) {
+    if (table->Table[i].InterfaceLuid.Value == luid.Value) {
+      DWORD delete_result = DeleteIpForwardEntry2(&table->Table[i]);
+      if (delete_result != NO_ERROR && delete_result != ERROR_NOT_FOUND) {
+        success = false;
+        SetLastError(delete_result);
+      }
+    }
+  }
+  
+  FreeMibTable(table);
+  return success;
 }
