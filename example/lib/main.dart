@@ -58,6 +58,20 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
     _statusStream = _wireguardDartPlugin.statusStream();
+
+    // Listen to status stream and log received values
+    _statusStream.listen(
+      (ConnectionStatus status) {
+        developer.log('Status stream received: ${status.name}');
+      },
+      onError: (error) {
+        developer.log('Status stream error', error: error.toString());
+      },
+      onDone: () {
+        developer.log('Status stream closed');
+      },
+    );
+
     initPlatformState();
   }
 
