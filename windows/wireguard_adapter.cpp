@@ -156,13 +156,7 @@ bool WireguardAdapter::ApplyConfiguration(const std::string &config_text) {
 
   parsed_config_ = std::move(parser);
 
-  // Set adapter state to UP after successful configuration
-  if (!SetState(WIREGUARD_ADAPTER_STATE_UP)) {
-    logger_->error("Failed to set adapter state to UP");
-    return false;
-  }
-
-  logger_->info("Successfully applied WireGuard configuration and set adapter UP");
+  logger_->info("Successfully applied WireGuard configuration");
   return true;
 }
 
