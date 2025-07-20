@@ -36,6 +36,8 @@ list(APPEND PLUGIN_SOURCES
   "wireguard_adapter.h"
   "wireguard_config_parser.cpp"
   "wireguard_config_parser.h"
+  "wireguard_network_config.cpp"
+  "wireguard_network_config.h"
 )
 
 # Define the plugin library target. Its name must not be changed (see comment
