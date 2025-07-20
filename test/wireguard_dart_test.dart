@@ -58,55 +58,60 @@ void main() {
 
     test('should setup tunnel successfully', () async {
       when(mockWireGuardDartPlatform.setupTunnel(
-              bundleId: anyNamed('bundleId'), tunnelName: anyNamed('tunnelName'), win32ServiceName: anyNamed('win32ServiceName')))
+              bundleId: anyNamed('bundleId'),
+              tunnelName: anyNamed('tunnelName'),
+              win32ServiceName: anyNamed('win32ServiceName'),
+              cfg: anyNamed('cfg')))
           .thenAnswer((_) async => Future.value());
 
-      await wireguardDart.setupTunnel(bundleId: 'bundleId', tunnelName: 'tunnelName', win32ServiceName: 'win32ServiceName');
+      await wireguardDart.setupTunnel(bundleId: 'bundleId', tunnelName: 'tunnelName', win32ServiceName: 'win32ServiceName', cfg: 'config');
 
-      verify(mockWireGuardDartPlatform.setupTunnel(bundleId: 'bundleId', tunnelName: 'tunnelName', win32ServiceName: 'win32ServiceName')).called(1);
+      verify(mockWireGuardDartPlatform.setupTunnel(
+              bundleId: 'bundleId', tunnelName: 'tunnelName', win32ServiceName: 'win32ServiceName', cfg: 'config'))
+          .called(1);
     });
 
     test('should handle error when setting up tunnel', () async {
       when(mockWireGuardDartPlatform.setupTunnel(
-              bundleId: anyNamed('bundleId'), tunnelName: anyNamed('tunnelName'), win32ServiceName: anyNamed('win32ServiceName')))
+              bundleId: anyNamed('bundleId'),
+              tunnelName: anyNamed('tunnelName'),
+              win32ServiceName: anyNamed('win32ServiceName'),
+              cfg: anyNamed('cfg')))
           .thenThrow(Exception('Failed to setup tunnel'));
 
-      expect(() => wireguardDart.setupTunnel(bundleId: 'bundleId', tunnelName: 'tunnelName', win32ServiceName: 'win32ServiceName'), throwsException);
-      verify(mockWireGuardDartPlatform.setupTunnel(bundleId: 'bundleId', tunnelName: 'tunnelName', win32ServiceName: 'win32ServiceName')).called(1);
+      expect(() => wireguardDart.setupTunnel(bundleId: 'bundleId', tunnelName: 'tunnelName', win32ServiceName: 'win32ServiceName', cfg: 'config'),
+          throwsException);
+      verify(mockWireGuardDartPlatform.setupTunnel(
+              bundleId: 'bundleId', tunnelName: 'tunnelName', win32ServiceName: 'win32ServiceName', cfg: 'config'))
+          .called(1);
     });
 
     test('should connect successfully', () async {
       when(mockWireGuardDartPlatform.connect(
-          cfg: anyNamed('cfg'),
           win32ServiceName: anyNamed(
-            'win32ServiceName',
-          ))).thenAnswer((_) async => Future.value());
+        'win32ServiceName',
+      ))).thenAnswer((_) async => Future.value());
 
       await wireguardDart.connect(
-        cfg: 'config',
         win32ServiceName: 'win32ServiceName',
       );
 
       verify(mockWireGuardDartPlatform.connect(
-        cfg: 'config',
         win32ServiceName: 'win32ServiceName',
       )).called(1);
     });
 
     test('should handle error when connecting', () async {
       when(mockWireGuardDartPlatform.connect(
-        cfg: anyNamed('cfg'),
         win32ServiceName: anyNamed('win32ServiceName'),
       )).thenThrow(Exception('Failed to connect'));
 
       expect(
           () => wireguardDart.connect(
-                cfg: 'config',
                 win32ServiceName: 'win32ServiceName',
               ),
           throwsException);
       verify(mockWireGuardDartPlatform.connect(
-        cfg: 'config',
         win32ServiceName: 'win32ServiceName',
       )).called(1);
     });
@@ -206,23 +211,22 @@ void main() {
 
   test('should throw not implemented exception for setupTunnel', () async {
     when(mockWireGuardDartPlatform.setupTunnel(
-            bundleId: anyNamed('bundleId'), tunnelName: anyNamed('tunnelName'), win32ServiceName: anyNamed('win32ServiceName')))
+            bundleId: anyNamed('bundleId'), tunnelName: anyNamed('tunnelName'), win32ServiceName: anyNamed('win32ServiceName'), cfg: anyNamed('cfg')))
         .thenThrow(UnimplementedError('setupTunnel not implemented'));
 
-    expect(() => wireguardDart.setupTunnel(bundleId: 'bundleId', tunnelName: 'tunnelName', win32ServiceName: 'win32ServiceName'),
+    expect(() => wireguardDart.setupTunnel(bundleId: 'bundleId', tunnelName: 'tunnelName', win32ServiceName: 'win32ServiceName', cfg: 'config'),
         throwsA(isA<UnimplementedError>()));
-    verify(mockWireGuardDartPlatform.setupTunnel(bundleId: 'bundleId', tunnelName: 'tunnelName', win32ServiceName: 'win32ServiceName')).called(1);
+    verify(mockWireGuardDartPlatform.setupTunnel(bundleId: 'bundleId', tunnelName: 'tunnelName', win32ServiceName: 'win32ServiceName', cfg: 'config'))
+        .called(1);
   });
 
   test('should throw not implemented exception for connect', () async {
     when(mockWireGuardDartPlatform.connect(
-      cfg: anyNamed('cfg'),
       win32ServiceName: anyNamed('win32ServiceName'),
     )).thenThrow(UnimplementedError('connect not implemented'));
 
-    expect(() => wireguardDart.connect(cfg: 'config', win32ServiceName: 'win32ServiceName'), throwsA(isA<UnimplementedError>()));
+    expect(() => wireguardDart.connect(win32ServiceName: 'win32ServiceName'), throwsA(isA<UnimplementedError>()));
     verify(mockWireGuardDartPlatform.connect(
-      cfg: 'config',
       win32ServiceName: 'win32ServiceName',
     )).called(1);
   });
@@ -258,18 +262,23 @@ void main() {
   });
 
   test('should return error when wrong config is sent', () async {
-    when(mockWireGuardDartPlatform.connect(cfg: anyNamed('cfg'), win32ServiceName: anyNamed('win32ServiceName')))
+    when(mockWireGuardDartPlatform.setupTunnel(
+            bundleId: anyNamed('bundleId'), tunnelName: anyNamed('tunnelName'), win32ServiceName: anyNamed('win32ServiceName'), cfg: anyNamed('cfg')))
         .thenThrow(Exception('Invalid config'));
 
     expect(
-        () => wireguardDart.connect(
-              cfg: 'wrongConfig',
+        () => wireguardDart.setupTunnel(
+              bundleId: 'bundleId',
+              tunnelName: 'tunnelName',
               win32ServiceName: 'win32ServiceName',
+              cfg: 'wrongConfig',
             ),
         throwsException);
-    verify(mockWireGuardDartPlatform.connect(
-      cfg: 'wrongConfig',
+    verify(mockWireGuardDartPlatform.setupTunnel(
+      bundleId: 'bundleId',
+      tunnelName: 'tunnelName',
       win32ServiceName: 'win32ServiceName',
+      cfg: 'wrongConfig',
     )).called(1);
   });
 }
