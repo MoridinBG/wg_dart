@@ -153,7 +153,14 @@ class _MyAppState extends State<MyApp> {
 
   void setupTunnel() async {
     try {
-      await _wireguardDartPlugin.setupTunnel(bundleId: tunBundleId, tunnelName: "WiregardDart", win32ServiceName: winSvcName);
+      // replace with valid config file before running
+      await _wireguardDartPlugin.setupTunnel(
+        bundleId: tunBundleId,
+        tunnelName: "WiregardDart",
+        win32ServiceName: winSvcName,
+        cfg: """
+""",
+      );
       setState(() {
         _isTunnelSetup = true;
       });
@@ -179,10 +186,7 @@ class _MyAppState extends State<MyApp> {
 
   void connect() async {
     try {
-      // replace with valid config file before running
       await _wireguardDartPlugin.connect(
-        cfg: """
-""",
         win32ServiceName: winSvcName,
       );
       debugPrint("Connect success");
