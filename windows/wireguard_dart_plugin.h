@@ -8,9 +8,7 @@
 #include <optional>
 #include <vector>
 
-#include "connection_status_observer.h"
 #include "network_adapter_status_observer.h"
-#include "service_control.h"
 #include "wireguard_adapter.h"
 #include "wireguard_library.h"
 
@@ -67,8 +65,6 @@ private:
   // Helper method to find adapter by name
   WireguardAdapter *FindAdapterByName(const std::wstring &adapter_name);
 
-  std::unique_ptr<ServiceControl> tunnel_service_;
-  std::unique_ptr<ConnectionStatusObserver> connection_status_observer_;
   std::unique_ptr<NetworkAdapterStatusObserver> network_adapter_observer_;
   std::shared_ptr<spdlog::logger> logger_;
 
