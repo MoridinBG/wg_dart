@@ -11,12 +11,9 @@
 #include <memory>
 #include <sstream>
 
-#include "config_writer.h"
 #include "connection_status.h"
-#include "connection_status_observer.h"
 #include "key_generator.h"
 #include "network_adapter_status_observer.h"
-#include "service_control.h"
 #include "spdlog/spdlog.h"
 #include "tunnel.h"
 #include "utils.h"
@@ -44,10 +41,7 @@ void WireguardDartPlugin::RegisterWithRegistrar(flutter::PluginRegistrarWindows 
   auto status_channel = std::make_unique<flutter::EventChannel<flutter::EncodableValue>>(
       registrar->messenger(), "wireguard_dart/status", &flutter::StandardMethodCodec::GetInstance());
 
-  plugin->connection_status_observer_ = std::make_unique<ConnectionStatusObserver>();   // Keep for backwards
-                                                                                        // compatibility
-  plugin->network_adapter_observer_ = std::make_unique<NetworkAdapterStatusObserver>(); // New network adapter
-                                                                                        // observer
+  plugin->network_adapter_observer_ = std::make_unique<NetworkAdapterStatusObserver>();
   auto status_channel_handler = std::make_unique<flutter::StreamHandlerFunctions<>>(
       [plugin_pointer = plugin.get()](
           const flutter::EncodableValue *args,
@@ -55,8 +49,8 @@ void WireguardDartPlugin::RegisterWithRegistrar(flutter::PluginRegistrarWindows 
         return plugin_pointer->network_adapter_observer_->OnListen(args, std::move(events));
       },
       [plugin_pointer =
-           plugin.get()](const flutter::EncodableValue *arguments) -> std::unique_ptr<flutter::StreamHandlerError<>> {
-        return plugin_pointer->network_adapter_observer_->OnCancel(arguments);
+           plugin.get()](const flutter::EncodableValue *args) -> std::unique_ptr<flutter::StreamHandlerError<>> {
+        return plugin_pointer->network_adapter_observer_->OnCancel(args);
       });
 
   status_channel->SetStreamHandler(std::move(status_channel_handler));
@@ -79,10 +73,7 @@ WireguardDartPlugin::WireguardDartPlugin() {
   }
 }
 
-WireguardDartPlugin::~WireguardDartPlugin() {
-  this->network_adapter_observer_->StopAllObserving(); // Use new network adapter observer
-  this->connection_status_observer_->StopObserving();  // Keep for backwards compatibility cleanup
-}
+WireguardDartPlugin::~WireguardDartPlugin() { this->network_adapter_observer_->StopAllObserving(); }
 
 WireguardAdapter *WireguardDartPlugin::FindAdapterByName(const std::wstring &adapter_name) {
   auto adapter_it = std::find_if(adapters_.begin(), adapters_.end(),
@@ -162,15 +153,12 @@ void WireguardDartPlugin::HandleCheckTunnelConfiguration(
     const flutter::EncodableMap *args, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   logger_->info("Check tunnel configuration initiated");
 
-  // Check if we have any adapters created or if the service exists
+  // Check if we have any valid adapters created
   bool has_adapter = !adapters_.empty() && adapters_.back() && adapters_.back()->IsValid();
-  bool has_service = this->tunnel_service_.get() != nullptr;
-  bool is_configured = has_adapter || has_service;
+  bool is_configured = has_adapter;
 
   result->Success(flutter::EncodableValue(is_configured));
-  logger_->info("Check tunnel configuration completed - configured: {}, "
-                "adapter: {}, service: {}",
-                is_configured, has_adapter, has_service);
+  logger_->info("Check tunnel configuration completed - configured: {}, adapter: {}", is_configured, has_adapter);
 }
 
 void WireguardDartPlugin::HandleNativeInit(const flutter::EncodableMap *args,
