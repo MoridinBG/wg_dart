@@ -19,24 +19,6 @@ std::string ConnectionStatusToString(const ConnectionStatus status) {
   }
 }
 
-ConnectionStatus ConnectionStatusFromWinSvcState(DWORD dwCurrentState) {
-  switch (dwCurrentState) {
-    case SERVICE_RUNNING:
-      return ConnectionStatus::connected;
-    case SERVICE_STOPPED:
-    case SERVICE_PAUSED:
-      return ConnectionStatus::disconnected;
-    case SERVICE_START_PENDING:
-    case SERVICE_CONTINUE_PENDING:
-      return ConnectionStatus::connecting;
-    case SERVICE_STOP_PENDING:
-    case SERVICE_PAUSE_PENDING:
-      return ConnectionStatus::disconnecting;
-    default:
-      return ConnectionStatus::unknown;
-  }
-}
-
 ConnectionStatus ConnectionStatusFromIfOperStatus(IF_OPER_STATUS operStatus) {
   switch (operStatus) {
     case IfOperStatusUp:
