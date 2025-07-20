@@ -44,7 +44,6 @@ protected:
   OnCancelInternal(const flutter::EncodableValue *arguments) override;
 
 private:
-  std::optional<NET_LUID> GetMonitoredAdapter(const NET_LUID &luid);
   std::optional<NET_LUID> GetMonitoredAdapter(const NET_LUID &luid) const;
 
   // Static callback for Windows API

@@ -115,11 +115,15 @@ VOID CALLBACK NetworkAdapterStatusObserver::IpInterfaceChangeCallback(PVOID call
 
 void NetworkAdapterStatusObserver::HandleInterfaceChange(const NET_LUID &luid,
                                                          MIB_NOTIFICATION_TYPE notification_type) {
-  std::lock_guard<std::mutex> lock(adapters_mutex_);
+  // Lock only while looking up the adapter
+  // and release the lock while potentially blocking while reading adapter status and notifying flutter
+  bool is_monitoring;
+  {
+    std::lock_guard<std::mutex> lock(adapters_mutex_);
+    is_monitoring = GetMonitoredAdapter(luid).has_value();
+  }
 
-  auto found_adapter = GetMonitoredAdapter(luid);
-
-  if (found_adapter.has_value()) {
+  if (is_monitoring) {
     std::string status = GetInterfaceStatus(luid);
     logger_->info("Interface change for adapter LUID {}: {} -> {}", luid.Value, static_cast<int>(notification_type),
                   status);
@@ -164,12 +168,6 @@ std::string NetworkAdapterStatusObserver::GetInterfaceStatus(const NET_LUID &lui
 }
 
 void NetworkAdapterStatusObserver::Cleanup() { StopAllObserving(); }
-
-std::optional<NET_LUID> NetworkAdapterStatusObserver::GetMonitoredAdapter(const NET_LUID &luid) {
-  auto it = std::find_if(monitored_adapters_.begin(), monitored_adapters_.end(),
-                         [&luid](const NET_LUID &monitored_luid) { return monitored_luid.Value == luid.Value; });
-  return (it != monitored_adapters_.end()) ? std::optional<NET_LUID>(*it) : std::nullopt;
-}
 
 std::optional<NET_LUID> NetworkAdapterStatusObserver::GetMonitoredAdapter(const NET_LUID &luid) const {
   auto it = std::find_if(monitored_adapters_.begin(), monitored_adapters_.end(),
