@@ -139,7 +139,7 @@ class _MyAppState extends State<MyApp> {
 
   void setupTunnel() async {
     try {
-      await _wireguardDartPlugin.setupTunnel(bundleId: tunBundleId, tunnelName: "WiregardDart", win32ServiceName: winSvcName);
+      await _wireguardDartPlugin.setupTunnel(bundleId: tunBundleId, tunnelName: "WiregardDart");
       setState(() {
         _isTunnelSetup = true;
       });
@@ -169,7 +169,7 @@ class _MyAppState extends State<MyApp> {
       await _wireguardDartPlugin.connect(
         cfg: """
 """,
-        win32ServiceName: winSvcName,
+        tunnelName: "WiregardDart",
       );
       debugPrint("Connect success");
       showSnackbar(
@@ -193,7 +193,7 @@ class _MyAppState extends State<MyApp> {
 
   void disconnect() async {
     try {
-      await _wireguardDartPlugin.disconnect(win32ServiceName: winSvcName);
+      await _wireguardDartPlugin.disconnect(tunnelName: "WiregardDart");
       debugPrint("Disconnect success");
       showSnackbar(
         "Disconnect success",
