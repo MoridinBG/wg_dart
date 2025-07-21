@@ -217,13 +217,3 @@ NetworkAdapterStatusObserver::OnCancelInternal(const flutter::EncodableValue *ar
 }
 
 } // namespace wireguard_dart
-}
-
-} // namespace wireguard_dart
-if (sink_) {
-  sink_.reset();
-}
-return nullptr;
-}
-
-} // namespace wireguard_dart
