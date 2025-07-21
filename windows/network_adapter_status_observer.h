@@ -52,7 +52,7 @@ private:
 
   void HandleInterfaceChange(const NET_LUID &luid, MIB_NOTIFICATION_TYPE notification_type);
   void NotifyStatusChange(const NET_LUID &luid, const std::string &status);
-  std::string GetInterfaceStatus(const NET_LUID &luid);
+  std::string GetInterfaceStatus(const NET_LUID &luid) const;
   void Cleanup();
 
   mutable std::mutex adapters_mutex_;

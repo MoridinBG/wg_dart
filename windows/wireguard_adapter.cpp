@@ -36,9 +36,7 @@ std::unique_ptr<WireguardAdapter> WireguardAdapter::Open(const std::shared_ptr<W
   }
 
   auto adapter = std::unique_ptr<WireguardAdapter>(new WireguardAdapter(library, name));
-
   adapter->adapter_handle_ = library->OpenAdapter()(name.c_str());
-
   if (!adapter->adapter_handle_) {
     return nullptr;
   }
