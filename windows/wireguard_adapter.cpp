@@ -17,7 +17,6 @@ std::unique_ptr<WireguardAdapter> WireguardAdapter::Create(const std::shared_ptr
   }
 
   auto adapter = std::unique_ptr<WireguardAdapter>(new WireguardAdapter(library, name));
-
   adapter->adapter_handle_ = library->CreateAdapter()(name.c_str(), tunnel_type.c_str(),
                                                       nullptr // Let system choose GUID
   );
@@ -46,14 +45,12 @@ std::unique_ptr<WireguardAdapter> WireguardAdapter::Open(const std::shared_ptr<W
 
 WireguardAdapter::WireguardAdapter(const std::shared_ptr<WireguardLibrary> &library, const std::wstring &name)
     : library_(library), name_(name) {
-  // Initialize logger
   try {
     logger_ = spdlog::get("wireguard_dart");
     if (!logger_) {
       logger_ = spdlog::default_logger();
     }
   } catch (const std::exception &) {
-    // Fallback to default logger if initialization fails
     logger_ = spdlog::default_logger();
   }
 }
@@ -119,7 +116,6 @@ bool WireguardAdapter::ApplyConfiguration(const std::string &config_text) {
     return false;
   }
 
-  // Parse and store configuration
   WireguardConfigParser parser;
   if (!parser.Parse(config_text)) {
     parsed_config_.reset(); // Clear any previous config
@@ -144,7 +140,6 @@ bool WireguardAdapter::ApplyConfiguration(const std::string &config_text) {
     return false;
   }
 
-  // Apply configuration to adapter
   const WIREGUARD_INTERFACE *config = reinterpret_cast<const WIREGUARD_INTERFACE *>(config_buffer.data());
   if (!SetConfiguration(config, actual_size)) {
     parsed_config_.reset();
@@ -153,7 +148,6 @@ bool WireguardAdapter::ApplyConfiguration(const std::string &config_text) {
   }
 
   parsed_config_ = std::move(parser);
-
   logger_->info("Successfully applied WireGuard configuration");
   return true;
 }
@@ -177,27 +171,22 @@ bool WireguardAdapter::ConfigureNetworking() {
     return false;
   }
 
-  // Create network config helper
   WireguardNetworkConfig net_config(luid);
-
-  // Extract interface addresses
   const auto &interface_config = parsed_config_->GetInterface();
 
-  // Configure IP addresses
   logger_->info("Configuring IP addresses");
   if (!net_config.ConfigureIPAddresses(interface_config.addresses)) {
     logger_->error("Failed to configure IP addresses");
     return false;
   }
 
-  // Extract allowed IPs from all peers
+  // Extract allowed IPs from all peers and configure routes
   std::vector<WIREGUARD_ALLOWED_IP> all_allowed_ips;
   const auto &peers = parsed_config_->GetPeers();
   for (const auto &peer : peers) {
     all_allowed_ips.insert(all_allowed_ips.end(), peer.allowed_ips.begin(), peer.allowed_ips.end());
   }
 
-  // Configure routes
   logger_->info("Configuring routes");
   if (!net_config.ConfigureRoutes(all_allowed_ips)) {
     logger_->error("Failed to configure routes");
@@ -222,7 +211,6 @@ bool WireguardAdapter::CleanupNetworking() {
     return false;
   }
 
-  // Create network config helper
   WireguardNetworkConfig net_config(luid);
 
   // Remove IP addresses and routes
