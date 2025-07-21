@@ -84,6 +84,25 @@ WireguardAdapter *WireguardDartPlugin::FindAdapterByName(const std::wstring &ada
   return (adapter_it != adapters_.end()) ? adapter_it->get() : nullptr;
 }
 
+void WireguardDartPlugin::RemoveAdapterByName(const std::wstring &adapter_name) {
+
+  auto adapter_it = std::find_if(adapters_.begin(), adapters_.end(),
+                                 [&adapter_name](const std::unique_ptr<WireguardAdapter> &adapter) {
+                                   return adapter && adapter->GetName() == adapter_name;
+                                 });
+
+  if (adapter_it != adapters_.end()) {
+    // Stop observing the adapter if it's being observed
+    NET_LUID luid;
+    if ((*adapter_it)->GetLUID(&luid)) {
+      network_adapter_observer_->StopObserving(luid);
+    }
+
+    // Remove adapter from vector
+    adapters_.erase(adapter_it);
+  }
+}
+
 std::optional<WireguardMethod> WireguardDartPlugin::GetMethodFromString(const std::string &method_name) {
   if (method_name == "generateKeyPair")
     return WireguardMethod::GENERATE_KEY_PAIR;
@@ -183,14 +202,14 @@ void WireguardDartPlugin::HandleNativeInit(const flutter::EncodableMap *args,
 void WireguardDartPlugin::HandleSetupTunnel(const flutter::EncodableMap *args,
                                             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   logger_->info("Setup tunnel initiated");
-  const auto *arg_service_name = std::get_if<std::string>(ValueOrNull(*args, "win32ServiceName"));
-  if (arg_service_name == NULL) {
-    logger_->error("Setup tunnel failed: win32ServiceName argument missing");
-    result->Error("Argument 'win32ServiceName' is required");
+  const auto *arg_tunnel_name = std::get_if<std::string>(ValueOrNull(*args, "tunnelName"));
+  if (arg_tunnel_name == NULL) {
+    logger_->error("Setup tunnel failed: tunnelName argument missing");
+    result->Error("Argument 'tunnelName' is required");
     return;
   }
 
-  std::wstring adapter_name = Utf8ToWide(*arg_service_name);
+  std::wstring adapter_name = Utf8ToWide(*arg_tunnel_name);
 
   // Check if WireGuard library is available
   if (!wg_library_ || !wg_library_->IsLoaded()) {
@@ -200,29 +219,33 @@ void WireguardDartPlugin::HandleSetupTunnel(const flutter::EncodableMap *args,
   }
 
   // Check if adapter already exists
-  if (FindAdapterByName(adapter_name)) {
-    logger_->info("Setup tunnel completed - adapter already exists: {}", *arg_service_name);
+  WireguardAdapter *existing_adapter = FindAdapterByName(adapter_name);
+  if (existing_adapter) {
     // Ensure the observer is started with the existing adapter
-    WireguardAdapter *existing_adapter = FindAdapterByName(adapter_name);
-    if (existing_adapter && existing_adapter->IsValid()) {
+    if (existing_adapter->IsValid()) {
       NET_LUID luid;
       if (existing_adapter->GetLUID(&luid)) {
         this->network_adapter_observer_->StartObserving(luid);
+        logger_->info("Setup tunnel completed - adapter already exists: {}", *arg_tunnel_name);
+        result->Success();
+        return;
       }
     }
-    result->Success();
-    return;
+
+    // Adapter was found but is not valid and did not return above, remove it and it will be created again
+    logger_->info("Removing invalid adapter: {}", *arg_tunnel_name);
+    RemoveAdapterByName(adapter_name);
   }
 
   // Try to open existing adapter first
   auto adapter = WireguardAdapter::Open(wg_library_, adapter_name);
   if (!adapter) {
     // If opening fails, create a new adapter
-    logger_->info("Creating new WireGuard adapter: {}", *arg_service_name);
+    logger_->info("Creating new WireGuard adapter: {}", *arg_tunnel_name);
     adapter = WireguardAdapter::Create(wg_library_, adapter_name);
     if (!adapter) {
       DWORD error_code = GetLastError();
-      std::string error_message = "Failed to create WireGuard adapter: " + *arg_service_name;
+      std::string error_message = "Failed to create WireGuard adapter: " + *arg_tunnel_name;
       if (error_code != 0) {
         error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
         error_message += " Description: " + GetLastErrorAsString(error_code);
@@ -231,9 +254,9 @@ void WireguardDartPlugin::HandleSetupTunnel(const flutter::EncodableMap *args,
       result->Error("ADAPTER_CREATION_FAILED", error_message);
       return;
     }
-    logger_->info("WireGuard adapter created successfully: {}", *arg_service_name);
+    logger_->info("WireGuard adapter created successfully: {}", *arg_tunnel_name);
   } else {
-    logger_->info("Opened existing WireGuard adapter: {}", *arg_service_name);
+    logger_->info("Opened existing WireGuard adapter: {}", *arg_tunnel_name);
   }
 
   // Store the adapter
@@ -251,10 +274,10 @@ void WireguardDartPlugin::HandleConnect(const flutter::EncodableMap *args,
   logger_->info("Connect initiated");
 
   // Get required arguments
-  const auto *arg_service_name = std::get_if<std::string>(ValueOrNull(*args, "win32ServiceName"));
-  if (arg_service_name == NULL) {
-    logger_->error("Connect failed: win32ServiceName argument missing");
-    result->Error("Argument 'win32ServiceName' is required");
+  const auto *arg_tunnel_name = std::get_if<std::string>(ValueOrNull(*args, "tunnelName"));
+  if (arg_tunnel_name == NULL) {
+    logger_->error("Connect failed: tunnelName argument missing");
+    result->Error("Argument 'tunnelName' is required");
     return;
   }
 
@@ -266,17 +289,17 @@ void WireguardDartPlugin::HandleConnect(const flutter::EncodableMap *args,
   }
 
   // Find the adapter by name
-  std::wstring adapter_name = Utf8ToWide(*arg_service_name);
+  std::wstring adapter_name = Utf8ToWide(*arg_tunnel_name);
   WireguardAdapter *target_adapter = FindAdapterByName(adapter_name);
 
   if (!target_adapter) {
-    logger_->error("Connect failed: adapter not found: {}", *arg_service_name);
+    logger_->error("Connect failed: adapter not found: {}", *arg_tunnel_name);
     result->Error("ADAPTER_NOT_FOUND", "Adapter not found. Call 'setupTunnel' first.");
     return;
   }
 
   if (!target_adapter->IsValid()) {
-    logger_->error("Connect failed: adapter is not valid: {}", *arg_service_name);
+    logger_->error("Connect failed: adapter is not valid: {}", *arg_tunnel_name);
     result->Error("ADAPTER_INVALID", "Adapter is not valid");
     return;
   }
@@ -327,7 +350,7 @@ void WireguardDartPlugin::HandleConnect(const flutter::EncodableMap *args,
   }
 
   result->Success();
-  logger_->info("Connect completed successfully for adapter: {}", *arg_service_name);
+  logger_->info("Connect completed successfully for adapter: {}", *arg_tunnel_name);
 }
 
 void WireguardDartPlugin::HandleDisconnect(const flutter::EncodableMap *args,
@@ -335,25 +358,25 @@ void WireguardDartPlugin::HandleDisconnect(const flutter::EncodableMap *args,
   logger_->info("Disconnect initiated");
 
   // Get required arguments
-  const auto *arg_service_name = std::get_if<std::string>(ValueOrNull(*args, "win32ServiceName"));
-  if (arg_service_name == NULL) {
-    logger_->error("Disconnect failed: win32ServiceName argument missing");
-    result->Error("Argument 'win32ServiceName' is required");
+  const auto *arg_tunnel_name = std::get_if<std::string>(ValueOrNull(*args, "tunnelName"));
+  if (arg_tunnel_name == NULL) {
+    logger_->error("Disconnect failed: tunnelName argument missing");
+    result->Error("Argument 'tunnelName' is required");
     return;
   }
 
   // Find the adapter by name
-  std::wstring adapter_name = Utf8ToWide(*arg_service_name);
+  std::wstring adapter_name = Utf8ToWide(*arg_tunnel_name);
   WireguardAdapter *target_adapter = FindAdapterByName(adapter_name);
 
   if (!target_adapter) {
-    logger_->error("Disconnect failed: adapter not found: {}", *arg_service_name);
+    logger_->error("Disconnect failed: adapter not found: {}", *arg_tunnel_name);
     result->Error("ADAPTER_NOT_FOUND", "Adapter not found");
     return;
   }
 
   if (!target_adapter->IsValid()) {
-    logger_->error("Disconnect failed: adapter is not valid: {}", *arg_service_name);
+    logger_->error("Disconnect failed: adapter is not valid: {}", *arg_tunnel_name);
     result->Error("ADAPTER_INVALID", "Adapter is not valid");
     return;
   }
@@ -401,7 +424,7 @@ void WireguardDartPlugin::HandleDisconnect(const flutter::EncodableMap *args,
   }
 
   result->Success();
-  logger_->info("Disconnect completed successfully for adapter: {}", *arg_service_name);
+  logger_->info("Disconnect completed successfully for adapter: {}", *arg_tunnel_name);
 }
 
 void WireguardDartPlugin::HandleStatus(const flutter::EncodableMap *args,
@@ -409,15 +432,15 @@ void WireguardDartPlugin::HandleStatus(const flutter::EncodableMap *args,
   logger_->info("Status check initiated");
 
   // Get required arguments
-  const auto *arg_service_name = std::get_if<std::string>(ValueOrNull(*args, "win32ServiceName"));
-  if (arg_service_name == NULL) {
+  const auto *arg_tunnel_name = std::get_if<std::string>(ValueOrNull(*args, "win32ServiceName"));
+  if (arg_tunnel_name == NULL) {
     logger_->error("Status check failed: win32ServiceName argument missing");
     result->Error("Argument 'win32ServiceName' is required");
     return;
   }
 
   // Find the adapter by name
-  std::wstring adapter_name = Utf8ToWide(*arg_service_name);
+  std::wstring adapter_name = Utf8ToWide(*arg_tunnel_name);
   WireguardAdapter *target_adapter = FindAdapterByName(adapter_name);
 
   if (!target_adapter) {
@@ -438,7 +461,7 @@ void WireguardDartPlugin::HandleStatus(const flutter::EncodableMap *args,
         (state == WIREGUARD_ADAPTER_STATE_UP) ? ConnectionStatus::connected : ConnectionStatus::disconnected;
 
     result->Success(ConnectionStatusToString(status));
-    logger_->info("Status check completed - adapter: {}, status: {}", *arg_service_name,
+    logger_->info("Status check completed - adapter: {}, status: {}", *arg_tunnel_name,
                   ConnectionStatusToString(status));
   } catch (std::exception &e) {
     logger_->error("Status check failed: {}", e.what());

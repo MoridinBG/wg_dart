@@ -62,8 +62,9 @@ private:
   void HandleStatus(const flutter::EncodableMap *args,
                     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
-  // Helper method to find adapter by name
+  // Helper methods to manage adapters
   WireguardAdapter *FindAdapterByName(const std::wstring &adapter_name);
+  void RemoveAdapterByName(const std::wstring &adapter_name);
 
   std::unique_ptr<NetworkAdapterStatusObserver> network_adapter_observer_;
   std::shared_ptr<spdlog::logger> logger_;
