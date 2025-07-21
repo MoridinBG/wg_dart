@@ -177,20 +177,8 @@ std::string NetworkAdapterStatusObserver::GetInterfaceStatus(const NET_LUID &lui
     return ConnectionStatusToString(ConnectionStatus::unknown);
   }
 
-  // Map Windows interface operational status to ConnectionStatus
-  switch (if_row.OperStatus) {
-    case IfOperStatusUp:
-      return ConnectionStatusToString(ConnectionStatus::connected);
-    case IfOperStatusDown:
-    case IfOperStatusDormant:
-    case IfOperStatusNotPresent:
-    case IfOperStatusLowerLayerDown:
-      return ConnectionStatusToString(ConnectionStatus::disconnected);
-    case IfOperStatusTesting:
-    case IfOperStatusUnknown:
-    default:
-      return ConnectionStatusToString(ConnectionStatus::unknown);
-  }
+  auto if_oper_status = ConnectionStatusFromIfOperStatus(if_row.OperStatus);
+  return ConnectionStatusToString(ConnectionStatus::connected);
 }
 
 void NetworkAdapterStatusObserver::Cleanup() { StopAllObserving(); }

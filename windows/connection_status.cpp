@@ -24,12 +24,12 @@ ConnectionStatus ConnectionStatusFromIfOperStatus(IF_OPER_STATUS operStatus) {
     case IfOperStatusUp:
       return ConnectionStatus::connected;
     case IfOperStatusDown:
-      return ConnectionStatus::disconnected;
-    case IfOperStatusTesting:
-    case IfOperStatusUnknown:
     case IfOperStatusDormant:
     case IfOperStatusNotPresent:
     case IfOperStatusLowerLayerDown:
+      return ConnectionStatus::disconnected;
+    case IfOperStatusTesting:
+    case IfOperStatusUnknown:
     default:
       return ConnectionStatus::unknown;
   }
