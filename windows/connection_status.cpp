@@ -1,7 +1,5 @@
 #include "connection_status.h"
 
-#include <windows.h>
-
 #include <string>
 
 namespace wireguard_dart {
@@ -21,22 +19,20 @@ std::string ConnectionStatusToString(const ConnectionStatus status) {
   }
 }
 
-ConnectionStatus ConnectionStatusFromWinSvcState(DWORD dwCurrentState) {
-  switch (dwCurrentState) {
-    case SERVICE_RUNNING:
+ConnectionStatus ConnectionStatusFromIfOperStatus(IF_OPER_STATUS operStatus) {
+  switch (operStatus) {
+    case IfOperStatusUp:
       return ConnectionStatus::connected;
-    case SERVICE_STOPPED:
-    case SERVICE_PAUSED:
+    case IfOperStatusDown:
+    case IfOperStatusDormant:
+    case IfOperStatusNotPresent:
+    case IfOperStatusLowerLayerDown:
       return ConnectionStatus::disconnected;
-    case SERVICE_START_PENDING:
-    case SERVICE_CONTINUE_PENDING:
-      return ConnectionStatus::connecting;
-    case SERVICE_STOP_PENDING:
-    case SERVICE_PAUSE_PENDING:
-      return ConnectionStatus::disconnecting;
+    case IfOperStatusTesting:
+    case IfOperStatusUnknown:
     default:
       return ConnectionStatus::unknown;
   }
 }
 
-}  // namespace wireguard_dart
+} // namespace wireguard_dart
