@@ -8,14 +8,13 @@
 #include <optional>
 #include <vector>
 
-#include "connection_status_observer.h"
-#include "service_control.h"
+#include "network_adapter_status_observer.h"
 #include "wireguard_adapter.h"
 #include "wireguard_library.h"
 
 namespace spdlog {
 class logger;
-}  // namespace spdlog
+} // namespace spdlog
 
 namespace wireguard_dart {
 
@@ -30,50 +29,50 @@ enum class WireguardMethod {
 };
 
 class WireguardDartPlugin : public flutter::Plugin {
- public:
-  static void RegisterWithRegistrar(flutter::PluginRegistrarWindows* registrar);
+public:
+  static void RegisterWithRegistrar(flutter::PluginRegistrarWindows *registrar);
 
   WireguardDartPlugin();
 
   virtual ~WireguardDartPlugin();
 
   // Disallow copy and assign.
-  WireguardDartPlugin(const WireguardDartPlugin&) = delete;
-  WireguardDartPlugin& operator=(const WireguardDartPlugin&) = delete;
+  WireguardDartPlugin(const WireguardDartPlugin &) = delete;
+  WireguardDartPlugin &operator=(const WireguardDartPlugin &) = delete;
 
- private:
+private:
   // Called when a method is called on this plugin's channel from Dart.
-  void HandleMethodCall(const flutter::MethodCall<flutter::EncodableValue>& method_call,
+  void HandleMethodCall(const flutter::MethodCall<flutter::EncodableValue> &method_call,
                         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
   // Helper methods for each supported method
-  std::optional<WireguardMethod> GetMethodFromString(const std::string& method_name);
-  void HandleGenerateKeyPair(const flutter::EncodableMap* args,
+  std::optional<WireguardMethod> GetMethodFromString(const std::string &method_name);
+  void HandleGenerateKeyPair(const flutter::EncodableMap *args,
                              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
-  void HandleCheckTunnelConfiguration(const flutter::EncodableMap* args,
+  void HandleCheckTunnelConfiguration(const flutter::EncodableMap *args,
                                       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
-  void HandleNativeInit(const flutter::EncodableMap* args,
+  void HandleNativeInit(const flutter::EncodableMap *args,
                         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
-  void HandleSetupTunnel(const flutter::EncodableMap* args,
+  void HandleSetupTunnel(const flutter::EncodableMap *args,
                          std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
-  void HandleConnect(const flutter::EncodableMap* args,
+  void HandleConnect(const flutter::EncodableMap *args,
                      std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
-  void HandleDisconnect(const flutter::EncodableMap* args,
+  void HandleDisconnect(const flutter::EncodableMap *args,
                         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
-  void HandleStatus(const flutter::EncodableMap* args,
+  void HandleStatus(const flutter::EncodableMap *args,
                     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
-  // Helper method to find adapter by name
-  WireguardAdapter* FindAdapterByName(const std::wstring& adapter_name);
+  // Helper methods to manage adapters
+  WireguardAdapter *FindAdapterByName(const std::wstring &adapter_name);
+  void RemoveAdapterByName(const std::wstring &adapter_name);
 
-  std::unique_ptr<ServiceControl> tunnel_service_;
-  std::unique_ptr<ConnectionStatusObserver> connection_status_observer_;
+  std::unique_ptr<NetworkAdapterStatusObserver> network_adapter_observer_;
   std::shared_ptr<spdlog::logger> logger_;
 
   std::shared_ptr<WireguardLibrary> wg_library_;
   std::vector<std::unique_ptr<WireguardAdapter>> adapters_;
 };
 
-}  // namespace wireguard_dart
+} // namespace wireguard_dart
 
-#endif  // FLUTTER_PLUGIN_WIREGUARD_DART_PLUGIN_H_
+#endif // FLUTTER_PLUGIN_WIREGUARD_DART_PLUGIN_H_
