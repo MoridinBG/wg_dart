@@ -9,6 +9,7 @@
 #include <libbase64.h>
 #include <windows.h>
 
+#include <algorithm>
 #include <memory>
 #include <sstream>
 
@@ -21,6 +22,9 @@
 #include "tunnel.h"
 #include "utils.h"
 #include "wireguard.h"
+#include "wireguard_adapter.h"
+#include "wireguard_config_parser.h"
+#include "wireguard_library.h"
 
 // Declare the function prototype
 std::string GetLastErrorAsString(DWORD error_code);
@@ -75,14 +79,30 @@ WireguardDartPlugin::WireguardDartPlugin() {
 
 WireguardDartPlugin::~WireguardDartPlugin() { this->connection_status_observer_.get()->StopObserving(); }
 
+WireguardAdapter *WireguardDartPlugin::FindAdapterByName(const std::wstring &adapter_name) {
+  auto adapter_it = std::find_if(adapters_.begin(), adapters_.end(),
+                                 [&adapter_name](const std::unique_ptr<WireguardAdapter> &adapter) {
+                                   return adapter && adapter->GetName() == adapter_name;
+                                 });
+
+  return (adapter_it != adapters_.end()) ? adapter_it->get() : nullptr;
+}
+
 std::optional<WireguardMethod> WireguardDartPlugin::GetMethodFromString(const std::string &method_name) {
-  if (method_name == "generateKeyPair") return WireguardMethod::GENERATE_KEY_PAIR;
-  if (method_name == "checkTunnelConfiguration") return WireguardMethod::CHECK_TUNNEL_CONFIGURATION;
-  if (method_name == "nativeInit") return WireguardMethod::NATIVE_INIT;
-  if (method_name == "setupTunnel") return WireguardMethod::SETUP_TUNNEL;
-  if (method_name == "connect") return WireguardMethod::CONNECT;
-  if (method_name == "disconnect") return WireguardMethod::DISCONNECT;
-  if (method_name == "status") return WireguardMethod::STATUS;
+  if (method_name == "generateKeyPair")
+    return WireguardMethod::GENERATE_KEY_PAIR;
+  if (method_name == "checkTunnelConfiguration")
+    return WireguardMethod::CHECK_TUNNEL_CONFIGURATION;
+  if (method_name == "nativeInit")
+    return WireguardMethod::NATIVE_INIT;
+  if (method_name == "setupTunnel")
+    return WireguardMethod::SETUP_TUNNEL;
+  if (method_name == "connect")
+    return WireguardMethod::CONNECT;
+  if (method_name == "disconnect")
+    return WireguardMethod::DISCONNECT;
+  if (method_name == "status")
+    return WireguardMethod::STATUS;
   return std::nullopt;
 }
 
@@ -136,30 +156,31 @@ void WireguardDartPlugin::HandleGenerateKeyPair(
 void WireguardDartPlugin::HandleCheckTunnelConfiguration(
     const flutter::EncodableMap *args, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   logger_->info("Check tunnel configuration initiated");
-  auto tunnel_service = this->tunnel_service_.get();
-  result->Success(flutter::EncodableValue(tunnel_service != nullptr));
-  logger_->info("Check tunnel configuration completed - service exists: {}", tunnel_service != nullptr);
+
+  // Check if we have any adapters created or if the service exists
+  bool has_adapter = !adapters_.empty() && adapters_.back() && adapters_.back()->IsValid();
+  bool has_service = this->tunnel_service_.get() != nullptr;
+  bool is_configured = has_adapter || has_service;
+
+  result->Success(flutter::EncodableValue(is_configured));
+  logger_->info("Check tunnel configuration completed - configured: {}, adapter: {}, service: {}", is_configured,
+                has_adapter, has_service);
 }
 
 void WireguardDartPlugin::HandleNativeInit(const flutter::EncodableMap *args,
                                            std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   logger_->info("Native init initiated");
-  // Disable packet forwarding that conflicts with WireGuard
-  ServiceControl remoteAccessService = ServiceControl(L"RemoteAccess");
-  try {
-    remoteAccessService.Stop();
-  } catch (std::exception &e) {
-    logger_->error("Failed to stop RemoteAccess service: {}", e.what());
-    result->Error(std::string("Could not stop packet forwarding: ").append(e.what()));
+
+  // Initialize WireGuard library
+  wg_library_ = WireguardLibrary::Create();
+  if (wg_library_) {
+    logger_->info("WireGuard library loaded successfully");
+  } else {
+    logger_->error("Failed to load WireGuard library - adapter management will not be possible");
+    result->Error("Failed to load WireGuard library");
     return;
   }
-  try {
-    remoteAccessService.Disable();
-  } catch (std::exception &e) {
-    logger_->error("Failed to disable RemoteAccess service: {}", e.what());
-    result->Error(std::string("Could not disable packet forwarding: ").append(e.what()));
-    return;
-  }
+
   result->Success();
   logger_->info("Native init completed successfully");
 }
@@ -167,41 +188,71 @@ void WireguardDartPlugin::HandleNativeInit(const flutter::EncodableMap *args,
 void WireguardDartPlugin::HandleSetupTunnel(const flutter::EncodableMap *args,
                                             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   logger_->info("Setup tunnel initiated");
-  const auto *arg_service_name = std::get_if<std::string>(ValueOrNull(*args, "win32ServiceName"));
-  if (arg_service_name == NULL) {
-    logger_->error("Setup tunnel failed: win32ServiceName argument missing");
-    result->Error("Argument 'win32ServiceName' is required");
+  const auto *arg_tunnel_name = std::get_if<std::string>(ValueOrNull(*args, "tunnelName"));
+  if (arg_tunnel_name == NULL) {
+    logger_->error("Setup tunnel failed: tunnelName argument missing");
+    result->Error("Argument 'tunnelName' is required");
     return;
   }
-  if (this->tunnel_service_ != nullptr) {
-    // Ensure the observer is started even if the tunnel service already exists
-    this->connection_status_observer_.get()->StartObserving(Utf8ToWide(*arg_service_name));
+
+  std::wstring adapter_name = Utf8ToWide(*arg_tunnel_name);
+
+  // Check if WireGuard library is available
+  if (!wg_library_ || !wg_library_->IsLoaded()) {
+    logger_->error("Setup tunnel failed: WireGuard library not available");
+    result->Error("WIREGUARD_LIBRARY_NOT_AVAILABLE", "WireGuard library is not loaded");
+    return;
+  }
+
+  // Check if adapter already exists
+  if (FindAdapterByName(adapter_name)) {
+    logger_->info("Setup tunnel completed - adapter already exists: {}", *arg_tunnel_name);
+    // Ensure the observer is started
+    this->connection_status_observer_.get()->StartObserving(adapter_name);
     result->Success();
-    logger_->info("Setup tunnel completed - service already exists");
     return;
   }
-  try {
-    this->tunnel_service_ = std::make_unique<ServiceControl>(Utf8ToWide(*arg_service_name));
-  } catch (const std::exception &e) {
-    logger_->error("Setup tunnel failed - ServiceControl init error: {}", e.what());
-    result->Error("SERVICE_CONTROL_INIT_ERROR", std::string("Failed to initialize ServiceControl: ") + e.what());
-    return;
+
+  // Try to open existing adapter first
+  auto adapter = WireguardAdapter::Open(wg_library_, adapter_name);
+  if (!adapter) {
+    // If opening fails, create a new adapter
+    logger_->info("Creating new WireGuard adapter: {}", *arg_tunnel_name);
+    adapter = WireguardAdapter::Create(wg_library_, adapter_name);
+    if (!adapter) {
+      DWORD error_code = GetLastError();
+      std::string error_message = "Failed to create WireGuard adapter: " + *arg_tunnel_name;
+      if (error_code != 0) {
+        error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
+        error_message += " Description: " + GetLastErrorAsString(error_code);
+      }
+      logger_->error("Setup tunnel failed: {}", error_message);
+      result->Error("ADAPTER_CREATION_FAILED", error_message);
+      return;
+    }
+    logger_->info("WireGuard adapter created successfully: {}", *arg_tunnel_name);
+  } else {
+    logger_->info("Opened existing WireGuard adapter: {}", *arg_tunnel_name);
   }
-  this->connection_status_observer_.get()->StartObserving(Utf8ToWide(*arg_service_name));
+
+  // Store the adapter
+  adapters_.push_back(std::move(adapter));
 
   result->Success();
-  logger_->info("Setup tunnel completed successfully");
 }
 
 void WireguardDartPlugin::HandleConnect(const flutter::EncodableMap *args,
                                         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   logger_->info("Connect initiated");
-  auto tunnel_service = this->tunnel_service_.get();
-  if (tunnel_service == nullptr) {
-    logger_->error("Connect failed: tunnel service not initialized");
-    result->Error("Invalid state: call 'setupTunnel' first");
+
+  // Get required arguments
+  const auto *arg_tunnel_name = std::get_if<std::string>(ValueOrNull(*args, "tunnelName"));
+  if (arg_tunnel_name == NULL) {
+    logger_->error("Connect failed: tunnelName argument missing");
+    result->Error("Argument 'tunnelName' is required");
     return;
   }
+
   const auto *cfg = std::get_if<std::string>(ValueOrNull(*args, "cfg"));
   if (cfg == NULL) {
     logger_->error("Connect failed: cfg argument missing");
@@ -209,141 +260,178 @@ void WireguardDartPlugin::HandleConnect(const flutter::EncodableMap *args,
     return;
   }
 
-  std::wstring wg_config_filename;
-  try {
-    wg_config_filename = WriteConfigToTempFile(*cfg);
-  } catch (std::exception &e) {
-    logger_->error("Connect failed: could not write config file: {}", e.what());
-    result->Error(std::string("Could not write wireguard config: ").append(e.what()));
+  // Find the adapter by name
+  std::wstring adapter_name = Utf8ToWide(*arg_tunnel_name);
+  WireguardAdapter *target_adapter = FindAdapterByName(adapter_name);
+
+  if (!target_adapter) {
+    logger_->error("Connect failed: adapter not found: {}", *arg_tunnel_name);
+    result->Error("ADAPTER_NOT_FOUND", "Adapter not found. Call 'setupTunnel' first.");
     return;
   }
 
-  wchar_t module_filename[MAX_PATH];
-  GetModuleFileName(NULL, module_filename, MAX_PATH);
-  auto current_exec_dir = std::wstring(module_filename);
-  current_exec_dir = current_exec_dir.substr(0, current_exec_dir.find_last_of(L"\\/"));
-
-  std::wostringstream service_exec_builder;
-  service_exec_builder << current_exec_dir << "\\wireguard_svc.exe" << L" -service" << L" -config-file=\""
-                       << wg_config_filename << "\"";
-  std::wstring service_exec = service_exec_builder.str();
-
-  try {
-    CreateArgs csa = {};
-    csa.description = tunnel_service->service_name_ + L" WireGuard tunnel";
-    csa.executable_and_args = service_exec;
-    csa.dependencies = L"Nsi\0TcpIp\0";
-    tunnel_service->Create(csa);
-  } catch (std::exception &e) {
-    logger_->error("Connect failed: service creation error: {}", e.what());
-    result->Error(std::string(e.what()));
+  if (!target_adapter->IsValid()) {
+    logger_->error("Connect failed: adapter is not valid: {}", *arg_tunnel_name);
+    result->Error("ADAPTER_INVALID", "Adapter is not valid");
     return;
   }
-  this->connection_status_observer_.get()->StartObserving(L"");
+
+  // Apply configuration to the adapter
   try {
-    tunnel_service->Start();
-  } catch (const std::runtime_error &e) {
-    // Handle runtime errors with a specific error code and detailed message
-    std::string error_message = "Runtime error while starting the tunnel service: ";
-    error_message += e.what();
-    logger_->error("Connect failed: {}", error_message);
-    result->Error("RUNTIME_ERROR", error_message);  // Error code: RUNTIME_ERROR
-    return;
+    if (!target_adapter->ApplyConfiguration(*cfg)) {
+      DWORD error_code = GetLastError();
+      std::string error_message = "Failed to apply configuration to adapter";
+      if (error_code != 0) {
+        error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
+        error_message += " Description: " + GetLastErrorAsString(error_code);
+      }
+      logger_->error("Connect failed: {}", error_message);
+      result->Error("CONFIGURATION_FAILED", error_message);
+      return;
+    }
   } catch (const std::exception &e) {
-    // Handle service exceptions with a specific error code and detailed message
-    DWORD error_code = GetLastError();  // Retrieve the last Windows error code
-    std::string error_message = "Exception while starting the tunnel service: ";
+    DWORD error_code = GetLastError();
+    std::string error_message = "Exception while applying configuration: ";
     error_message += e.what();
     if (error_code != 0) {
       error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
       error_message += " Description: " + GetLastErrorAsString(error_code);
     }
     logger_->error("Connect failed: {}", error_message);
-    result->Error("SERVICE_EXCEPTION", error_message);  // Error code: SERVICE_EXCEPTION
+    result->Error("CONFIGURATION_EXCEPTION", error_message);
     return;
   } catch (...) {
-    // Handle unknown exceptions with additional details
-    DWORD error_code = GetLastError();  // Retrieve the last Windows error code
-    std::string error_message = "An unknown error occurred while starting the tunnel service.";
+    DWORD error_code = GetLastError();
+    std::string error_message = "Unknown error occurred while applying configuration.";
     if (error_code != 0) {
       error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
       error_message += " Description: " + GetLastErrorAsString(error_code);
     }
     logger_->error("Connect failed: {}", error_message);
-    result->Error("UNKNOWN_ERROR", error_message);  // Error code: UNKNOWN_ERROR
+    result->Error("UNKNOWN_ERROR", error_message);
     return;
   }
+
+  // Start observing the adapter
+  this->connection_status_observer_.get()->StartObserving(adapter_name);
+
   result->Success();
-  logger_->info("Connect completed successfully");
+  logger_->info("Connect completed successfully for adapter: {}", *arg_tunnel_name);
 }
 
 void WireguardDartPlugin::HandleDisconnect(const flutter::EncodableMap *args,
                                            std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   logger_->info("Disconnect initiated");
-  auto tunnel_service = this->tunnel_service_.get();
-  if (tunnel_service == nullptr) {
-    logger_->error("Disconnect failed: tunnel service not initialized");
-    result->Error("Invalid state: call 'setupTunnel' first");
+
+  // Get required arguments
+  const auto *arg_tunnel_name = std::get_if<std::string>(ValueOrNull(*args, "tunnelName"));
+  if (arg_tunnel_name == NULL) {
+    logger_->error("Disconnect failed: tunnelName argument missing");
+    result->Error("Argument 'tunnelName' is required");
     return;
   }
 
-  try {
-    tunnel_service->Stop();
-  } catch (const std::runtime_error &e) {
-    // Handle runtime errors with a specific error code and detailed message
-    std::string error_message = "Runtime error while stopping the tunnel service: ";
-    error_message += e.what();
-    logger_->error("Disconnect failed: {}", error_message);
-    result->Error("RUNTIME_ERROR", error_message);  // Error code: RUNTIME_ERROR
+  // Find the adapter by name
+  std::wstring adapter_name = Utf8ToWide(*arg_tunnel_name);
+  WireguardAdapter *target_adapter = FindAdapterByName(adapter_name);
+
+  if (!target_adapter) {
+    logger_->error("Disconnect failed: adapter not found: {}", *arg_tunnel_name);
+    result->Error("ADAPTER_NOT_FOUND", "Adapter not found");
     return;
+  }
+
+  if (!target_adapter->IsValid()) {
+    logger_->error("Disconnect failed: adapter is not valid: {}", *arg_tunnel_name);
+    result->Error("ADAPTER_INVALID", "Adapter is not valid");
+    return;
+  }
+
+  // Set adapter state to DOWN
+  try {
+    if (!target_adapter->SetState(WIREGUARD_ADAPTER_STATE_DOWN)) {
+      DWORD error_code = GetLastError();
+      std::string error_message = "Failed to set adapter state to DOWN";
+      if (error_code != 0) {
+        error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
+        error_message += " Description: " + GetLastErrorAsString(error_code);
+      }
+      logger_->error("Disconnect failed: {}", error_message);
+      result->Error("ADAPTER_STATE_FAILED", error_message);
+      return;
+    }
   } catch (const std::exception &e) {
-    // Handle service exceptions with a specific error code and detailed message
-    DWORD error_code = GetLastError();  // Retrieve the last Windows error code
-    std::string error_message = "Exception while stopping the tunnel service: ";
+    DWORD error_code = GetLastError();
+    std::string error_message = "Exception while setting adapter state: ";
     error_message += e.what();
     if (error_code != 0) {
       error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
       error_message += " Description: " + GetLastErrorAsString(error_code);
     }
     logger_->error("Disconnect failed: {}", error_message);
-    result->Error("SERVICE_EXCEPTION", error_message);  // Error code: SERVICE_EXCEPTION
+    result->Error("ADAPTER_EXCEPTION", error_message);
     return;
   } catch (...) {
-    // Handle unknown exceptions with additional details
-    DWORD error_code = GetLastError();  // Retrieve the last Windows error code
-    std::string error_message = "An unknown error occurred while stopping the tunnel service.";
+    DWORD error_code = GetLastError();
+    std::string error_message = "Unknown error occurred while setting adapter state.";
     if (error_code != 0) {
       error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
       error_message += " Description: " + GetLastErrorAsString(error_code);
     }
     logger_->error("Disconnect failed: {}", error_message);
-    result->Error("UNKNOWN_ERROR", error_message);  // Error code: UNKNOWN_ERROR
+    result->Error("UNKNOWN_ERROR", error_message);
     return;
   }
 
+  // Stop observing
+  this->connection_status_observer_.get()->StopObserving();
+
   result->Success();
-  logger_->info("Disconnect completed successfully");
+  logger_->info("Disconnect completed successfully for adapter: {}", *arg_tunnel_name);
 }
 
 void WireguardDartPlugin::HandleStatus(const flutter::EncodableMap *args,
                                        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   logger_->info("Status check initiated");
-  auto tunnel_service = this->tunnel_service_.get();
-  if (tunnel_service == nullptr) {
-    logger_->info("Status check completed - service not initialized, returning disconnected");
-    return result->Success(ConnectionStatusToString(ConnectionStatus::disconnected));
+
+  // Get required arguments
+  const auto *arg_tunnel_name = std::get_if<std::string>(ValueOrNull(*args, "win32ServiceName"));
+  if (arg_tunnel_name == NULL) {
+    logger_->error("Status check failed: win32ServiceName argument missing");
+    result->Error("Argument 'win32ServiceName' is required");
+    return;
+  }
+
+  // Find the adapter by name
+  std::wstring adapter_name = Utf8ToWide(*arg_tunnel_name);
+  WireguardAdapter *target_adapter = FindAdapterByName(adapter_name);
+
+  if (!target_adapter) {
+    logger_->info("Status check completed - adapter not found, returning disconnected");
+    result->Success(ConnectionStatusToString(ConnectionStatus::disconnected));
+    return;
+  }
+
+  if (!target_adapter->IsValid()) {
+    logger_->info("Status check completed - adapter invalid, returning disconnected");
+    result->Success(ConnectionStatusToString(ConnectionStatus::disconnected));
+    return;
   }
 
   try {
-    auto status = tunnel_service->Status();
+    WIREGUARD_ADAPTER_STATE state = target_adapter->GetState();
+    ConnectionStatus status =
+        (state == WIREGUARD_ADAPTER_STATE_UP) ? ConnectionStatus::connected : ConnectionStatus::disconnected;
+
     result->Success(ConnectionStatusToString(status));
-    logger_->info("Status check completed - status: {}", ConnectionStatusToString(status));
+    logger_->info("Status check completed - adapter: {}, status: {}", *arg_tunnel_name,
+                  ConnectionStatusToString(status));
   } catch (std::exception &e) {
     logger_->error("Status check failed: {}", e.what());
     result->Error(std::string(e.what()));
   }
 }
-}  // namespace wireguard_dart
+} // namespace wireguard_dart
 
 std::string GetLastErrorAsString(DWORD error_code) {
   if (error_code == 0) {
