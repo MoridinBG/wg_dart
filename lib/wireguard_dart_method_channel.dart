@@ -43,20 +43,18 @@ class MethodChannelWireguardDart extends WireguardDartPlatform {
   }
 
   @override
-  Future<void> setupTunnel({required String bundleId, required String tunnelName}) async {
+  Future<void> setupTunnel({required String bundleId, required String tunnelName, required String cfg}) async {
     final args = {
       'bundleId': bundleId,
       'tunnelName': tunnelName,
+      'cfg': cfg,
     };
     await methodChannel.invokeMethod<void>(WireguardMethodChannelMethod.setupTunnel.value, args);
   }
 
   @override
-  Future<void> connect({required String cfg, required String tunnelName}) async {
-    await methodChannel.invokeMethod<void>(WireguardMethodChannelMethod.connect.value, {
-      'cfg': cfg,
-      'tunnelName': tunnelName,
-    });
+  Future<void> connect({required String tunnelName}) async {
+    await methodChannel.invokeMethod<void>(WireguardMethodChannelMethod.connect.value, {'tunnelName': tunnelName});
   }
 
   @override

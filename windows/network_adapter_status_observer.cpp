@@ -59,40 +59,68 @@ void NetworkAdapterStatusObserver::StartObserving(const NET_LUID &luid) {
 }
 
 void NetworkAdapterStatusObserver::StopObserving(const NET_LUID &luid) {
-  std::lock_guard<std::mutex> lock(adapters_mutex_);
+  // CancelMibChangeNotify2 is a blocking call until Windows can gurantee that no
+  // more callbacks will be made for the specified handle.
+  // IpInterfaceChangeCallback can be called meanwhile by a system thread
+  // Locking here & in the callback will deadlock.
+  HANDLE notification_handle_to_cancel = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(adapters_mutex_);
 
-  auto it = std::find_if(monitored_adapters_.begin(), monitored_adapters_.end(),
-                         [&luid](const NET_LUID &monitored_luid) { return monitored_luid.Value == luid.Value; });
+    auto it = std::find_if(monitored_adapters_.begin(), monitored_adapters_.end(),
+                           [&luid](const NET_LUID &monitored_luid) { return monitored_luid.Value == luid.Value; });
 
-  if (it != monitored_adapters_.end()) {
-    logger_->info("Stopped monitoring adapter with LUID: {}", luid.Value);
+    if (it != monitored_adapters_.end()) {
+      logger_->info("Stopped monitoring adapter with LUID: {}", luid.Value);
 
-    monitored_adapters_.erase(it);
+      monitored_adapters_.erase(it);
 
-    // If no more adapters are being monitored, clean up global notifications
-    if (monitored_adapters_.empty() && notifications_registered_) {
-      if (interface_notification_handle_) {
-        CancelMibChangeNotify2(interface_notification_handle_);
+      // If no more adapters are being monitored, clean up global notifications
+      if (monitored_adapters_.empty() && notifications_registered_) {
+        // Store handle locally to avoid potential race conditions
+        notification_handle_to_cancel = interface_notification_handle_;
         interface_notification_handle_ = nullptr;
+        notifications_registered_ = false;
       }
-      notifications_registered_ = false;
-      logger_->info("Unregistered global network change notifications");
+    }
+  }
+
+  // Call CancelMibChangeNotify2 outside the lock
+  if (notification_handle_to_cancel) {
+    logger_->debug("Canceling network change notifications...");
+    DWORD result = CancelMibChangeNotify2(notification_handle_to_cancel);
+    if (result != NO_ERROR) {
+      logger_->warn("Failed to cancel MIB change notifications: {}", result);
+    } else {
+      logger_->info("Successfully unregistered global network change notifications");
     }
   }
 }
 
 void NetworkAdapterStatusObserver::StopAllObserving() {
-  std::lock_guard<std::mutex> lock(adapters_mutex_);
+  HANDLE handle_to_cancel = nullptr;
 
-  monitored_adapters_.clear();
+  {
+    std::lock_guard<std::mutex> lock(adapters_mutex_);
 
-  if (notifications_registered_) {
-    if (interface_notification_handle_) {
-      CancelMibChangeNotify2(interface_notification_handle_);
+    monitored_adapters_.clear();
+
+    if (notifications_registered_) {
+      handle_to_cancel = interface_notification_handle_;
       interface_notification_handle_ = nullptr;
+      notifications_registered_ = false;
     }
-    notifications_registered_ = false;
-    logger_->info("Stopped monitoring all adapters and unregistered notifications");
+  } // Lock is released here
+
+  // Call CancelMibChangeNotify2 outside the lock to avoid deadlock
+  if (handle_to_cancel) {
+    logger_->info("Canceling all network change notifications...");
+    DWORD result = CancelMibChangeNotify2(handle_to_cancel);
+    if (result != NO_ERROR) {
+      logger_->warn("Failed to cancel MIB change notifications: {}", result);
+    } else {
+      logger_->info("Stopped monitoring all adapters and unregistered notifications");
+    }
   }
 }
 
@@ -115,20 +143,18 @@ VOID CALLBACK NetworkAdapterStatusObserver::IpInterfaceChangeCallback(PVOID call
 
 void NetworkAdapterStatusObserver::HandleInterfaceChange(const NET_LUID &luid,
                                                          MIB_NOTIFICATION_TYPE notification_type) {
-  // Lock only while looking up the adapter
-  // and release the lock while potentially blocking while reading adapter status and notifying flutter
-  bool is_monitoring;
+  // Scope the lock to avoid locking while waiting for Windows APIs and Flutter notifications
   {
     std::lock_guard<std::mutex> lock(adapters_mutex_);
-    is_monitoring = GetMonitoredAdapter(luid).has_value();
+    if (!GetMonitoredAdapter(luid).has_value()) {
+      return;
+    }
   }
 
-  if (is_monitoring) {
-    std::string status = GetInterfaceStatus(luid);
-    logger_->info("Interface change for adapter LUID {}: {} -> {}", luid.Value, static_cast<int>(notification_type),
-                  status);
-    NotifyStatusChange(luid, status);
-  }
+  std::string status = GetInterfaceStatus(luid);
+  logger_->info("Interface change for adapter LUID {}: {} -> {}", luid.Value, static_cast<int>(notification_type),
+                status);
+  NotifyStatusChange(luid, status);
 }
 
 void NetworkAdapterStatusObserver::NotifyStatusChange(const NET_LUID &luid, const std::string &status) {
@@ -141,7 +167,7 @@ void NetworkAdapterStatusObserver::NotifyStatusChange(const NET_LUID &luid, cons
   }
 }
 
-std::string NetworkAdapterStatusObserver::GetInterfaceStatus(const NET_LUID &luid) {
+std::string NetworkAdapterStatusObserver::GetInterfaceStatus(const NET_LUID &luid) const {
   MIB_IF_ROW2 if_row;
   if_row.InterfaceLuid = luid;
 
