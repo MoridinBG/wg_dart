@@ -73,7 +73,25 @@ WireguardDartPlugin::WireguardDartPlugin() {
   }
 }
 
-WireguardDartPlugin::~WireguardDartPlugin() { this->network_adapter_observer_->StopAllObserving(); }
+WireguardDartPlugin::~WireguardDartPlugin() {
+  this->network_adapter_observer_->StopAllObserving();
+
+  // Clean up all adapters - don't fail destructor on errors
+  for (auto &adapter : adapters_) {
+    if (adapter && adapter->IsValid()) {
+      try {
+        if (!adapter->CleanupNetworking()) {
+          // Log warning but continue cleanup
+          logger_->warn("Failed to cleanup networking for adapter during shutdown");
+        }
+      } catch (...) {
+        // Log error but continue - destructor must not throw
+        logger_->error("Exception during network cleanup in destructor");
+      }
+    }
+  }
+  adapters_.clear(); // This will call destructors
+}
 
 WireguardAdapter *WireguardDartPlugin::FindAdapterByName(const std::wstring &adapter_name) {
   auto adapter_it = std::find_if(adapters_.begin(), adapters_.end(),
@@ -202,6 +220,14 @@ void WireguardDartPlugin::HandleNativeInit(const flutter::EncodableMap *args,
 void WireguardDartPlugin::HandleSetupTunnel(const flutter::EncodableMap *args,
                                             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   logger_->info("Setup tunnel initiated");
+
+  const auto *cfg = std::get_if<std::string>(ValueOrNull(*args, "cfg"));
+  if (cfg == NULL) {
+    logger_->error("Setup tunnel failed: cfg argument missing");
+    result->Error("Argument 'cfg' is required");
+    return;
+  }
+
   const auto *arg_tunnel_name = std::get_if<std::string>(ValueOrNull(*args, "tunnelName"));
   if (arg_tunnel_name == NULL) {
     logger_->error("Setup tunnel failed: tunnelName argument missing");
@@ -242,7 +268,8 @@ void WireguardDartPlugin::HandleSetupTunnel(const flutter::EncodableMap *args,
   if (!adapter) {
     // If opening fails, create a new adapter
     logger_->info("Creating new WireGuard adapter: {}", *arg_tunnel_name);
-    adapter = WireguardAdapter::Create(wg_library_, adapter_name);
+    adapter = WireguardAdapter::Create(wg_library_, adapter_name, L"WireGuard");
+
     if (!adapter) {
       DWORD error_code = GetLastError();
       std::string error_message = "Failed to create WireGuard adapter: " + *arg_tunnel_name;
@@ -259,6 +286,68 @@ void WireguardDartPlugin::HandleSetupTunnel(const flutter::EncodableMap *args,
     logger_->info("Opened existing WireGuard adapter: {}", *arg_tunnel_name);
   }
 
+  // Apply configuration to the adapter
+  try {
+    if (!adapter->ApplyConfiguration(*cfg)) {
+      DWORD error_code = GetLastError();
+      std::string error_message = "Failed to apply configuration to adapter";
+      if (error_code != 0) {
+        error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
+        error_message += " Description: " + GetLastErrorAsString(error_code);
+      }
+      logger_->error("Setup tunnel failed: {}", error_message);
+      result->Error("CONFIGURATION_FAILED", error_message);
+      return;
+    }
+
+    // Configure Windows networking for the adapter
+    if (!adapter->ConfigureNetworking()) {
+      DWORD error_code = GetLastError();
+      std::string error_message = "Failed to configure network interface";
+      if (error_code != 0) {
+        error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
+        error_message += " Description: " + GetLastErrorAsString(error_code);
+      }
+      logger_->error("Setup tunnel failed: {}", error_message);
+      result->Error("NETWORK_CONFIGURATION_FAILED", error_message);
+      return;
+    }
+    logger_->info("Successfully configured network interface");
+  } catch (const std::exception &e) {
+    DWORD error_code = GetLastError();
+    std::string error_message = "Exception while applying configuration: ";
+    error_message += e.what();
+    if (error_code != 0) {
+      error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
+      error_message += " Description: " + GetLastErrorAsString(error_code);
+    }
+    logger_->error("Setup tunnel failed: {}", error_message);
+    result->Error("CONFIGURATION_EXCEPTION", error_message);
+    return;
+  } catch (...) {
+    DWORD error_code = GetLastError();
+    std::string error_message = "Unknown error occurred while applying configuration.";
+    if (error_code != 0) {
+      error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
+      error_message += " Description: " + GetLastErrorAsString(error_code);
+    }
+    logger_->error("Setup tunnel failed: {}", error_message);
+    result->Error("UNKNOWN_ERROR", error_message);
+    return;
+  }
+
+  // Set adapter to DOWN state initially - connect will bring it up
+  if (!adapter->SetState(WIREGUARD_ADAPTER_STATE_DOWN)) {
+    DWORD error_code = GetLastError();
+    std::string error_message = "Failed to set adapter state to DOWN after configuration";
+    if (error_code != 0) {
+      error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
+      error_message += " Description: " + GetLastErrorAsString(error_code);
+    }
+    logger_->warn("Setup tunnel warning: {}", error_message);
+    // Continue with setup even if setting state fails
+  }
+
   // Store the adapter
   NET_LUID luid;
   if (adapter->GetLUID(&luid)) {
@@ -267,6 +356,7 @@ void WireguardDartPlugin::HandleSetupTunnel(const flutter::EncodableMap *args,
   adapters_.push_back(std::move(adapter));
 
   result->Success();
+  logger_->info("Setup tunnel completed successfully for adapter: {}", *arg_tunnel_name);
 }
 
 void WireguardDartPlugin::HandleConnect(const flutter::EncodableMap *args,
@@ -278,13 +368,6 @@ void WireguardDartPlugin::HandleConnect(const flutter::EncodableMap *args,
   if (arg_tunnel_name == NULL) {
     logger_->error("Connect failed: tunnelName argument missing");
     result->Error("Argument 'tunnelName' is required");
-    return;
-  }
-
-  const auto *cfg = std::get_if<std::string>(ValueOrNull(*args, "cfg"));
-  if (cfg == NULL) {
-    logger_->error("Connect failed: cfg argument missing");
-    result->Error("Argument 'cfg' is required");
     return;
   }
 
@@ -304,33 +387,33 @@ void WireguardDartPlugin::HandleConnect(const flutter::EncodableMap *args,
     return;
   }
 
-  // Apply configuration to the adapter
+  // Set adapter state to UP
   try {
-    if (!target_adapter->ApplyConfiguration(*cfg)) {
+    if (!target_adapter->SetState(WIREGUARD_ADAPTER_STATE_UP)) {
       DWORD error_code = GetLastError();
-      std::string error_message = "Failed to apply configuration to adapter";
+      std::string error_message = "Failed to set adapter state to UP";
       if (error_code != 0) {
         error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
         error_message += " Description: " + GetLastErrorAsString(error_code);
       }
       logger_->error("Connect failed: {}", error_message);
-      result->Error("CONFIGURATION_FAILED", error_message);
+      result->Error("ADAPTER_STATE_FAILED", error_message);
       return;
     }
   } catch (const std::exception &e) {
     DWORD error_code = GetLastError();
-    std::string error_message = "Exception while applying configuration: ";
+    std::string error_message = "Exception while setting adapter state: ";
     error_message += e.what();
     if (error_code != 0) {
       error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
       error_message += " Description: " + GetLastErrorAsString(error_code);
     }
     logger_->error("Connect failed: {}", error_message);
-    result->Error("CONFIGURATION_EXCEPTION", error_message);
+    result->Error("ADAPTER_EXCEPTION", error_message);
     return;
   } catch (...) {
     DWORD error_code = GetLastError();
-    std::string error_message = "Unknown error occurred while applying configuration.";
+    std::string error_message = "Unknown error occurred while setting adapter state.";
     if (error_code != 0) {
       error_message += " Windows Error Code: " + std::to_string(error_code) + ".";
       error_message += " Description: " + GetLastErrorAsString(error_code);

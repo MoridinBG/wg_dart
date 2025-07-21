@@ -16,21 +16,19 @@ class WireguardDart {
   Future<void> setupTunnel({
     required String bundleId,
     required String tunnelName,
+    required String cfg,
   }) {
     return WireguardDartPlatform.instance.setupTunnel(
       bundleId: bundleId,
       tunnelName: tunnelName,
+      cfg: cfg,
     );
   }
 
   Future<void> connect({
-    required String cfg,
     required String tunnelName,
   }) {
-    return WireguardDartPlatform.instance.connect(
-      cfg: cfg,
-      tunnelName: tunnelName,
-    );
+    return WireguardDartPlatform.instance.connect(tunnelName: tunnelName);
   }
 
   Future<void> disconnect({required String tunnelName}) {
