@@ -178,7 +178,7 @@ std::string NetworkAdapterStatusObserver::GetInterfaceStatus(const NET_LUID &lui
   }
 
   auto if_oper_status = ConnectionStatusFromIfOperStatus(if_row.OperStatus);
-  return ConnectionStatusToString(ConnectionStatus::connected);
+  return ConnectionStatusToString(if_oper_status);
 }
 
 void NetworkAdapterStatusObserver::Cleanup() { StopAllObserving(); }
