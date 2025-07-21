@@ -32,6 +32,6 @@ void main() {
   });
 
   test('getPlatformVersion', () async {
-    await platform.disconnect(win32ServiceName: 'win32ServiceName ');
+    await platform.disconnect(tunnelName: 'tunnelName');
   });
 }
