@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:wireguard_dart/connection_status.dart';
 import 'package:wireguard_dart/key_pair.dart';
+import 'package:wireguard_dart/adapter_status.dart';
 import 'package:wireguard_dart/tunnel_statistics.dart';
 
 import 'wireguard_dart_platform_interface.dart';
@@ -88,22 +89,22 @@ class MethodChannelWireguardDart extends WireguardDartPlatform {
   }
 
   @override
-  Stream<(int, ConnectionStatus)> statusStream() {
+  Stream<AdapterStatus> statusStream() {
     return statusChannel.receiveBroadcastStream().distinct().where((val) {
       // Only process events that are Maps with both luid and status
       if (val is! Map) return false;
-      
+
       final luidValue = val['luid'];
       final statusValue = val['status'];
-      
+
       return luidValue is int && statusValue is String;
     }).map((val) {
       final Map event = val as Map;
       final int luid = event['luid'] as int;
       final String statusString = event['status'] as String;
       final ConnectionStatus status = ConnectionStatus.fromString(statusString);
-      
-      return (luid, status);
+
+      return AdapterStatus(luid, status);
     });
   }
 

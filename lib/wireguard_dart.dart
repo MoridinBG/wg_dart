@@ -1,5 +1,6 @@
 import 'package:wireguard_dart/key_pair.dart';
 import 'package:wireguard_dart/tunnel_statistics.dart';
+import 'package:wireguard_dart/adapter_status.dart';
 
 import 'connection_status.dart';
 import 'wireguard_dart_platform_interface.dart';
@@ -39,7 +40,7 @@ class WireguardDart {
     return WireguardDartPlatform.instance.status();
   }
 
-  Stream<(int, ConnectionStatus)> statusStream() {
+  Stream<AdapterStatus> statusStream() {
     return WireguardDartPlatform.instance.statusStream();
   }
 
