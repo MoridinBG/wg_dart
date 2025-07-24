@@ -154,12 +154,25 @@ class _MyAppState extends State<MyApp> {
   void setupTunnel() async {
     try {
       // replace with valid config file before running
-      await _wireguardDartPlugin.setupTunnel(
+      final result = await _wireguardDartPlugin.setupTunnel(
         bundleId: tunBundleId,
         tunnelName: "WiregardDart",
         cfg: """
 """,
       );
+
+      // Log the LUID from the result
+      if (result != null && result.containsKey('luid')) {
+        final luid = result['luid'];
+        debugPrint("Setup tunnel success - LUID: $luid");
+        developer.log(
+          'Setup tunnel completed - Adapter LUID: $luid',
+          name: 'WireguardDart',
+        );
+      } else {
+        debugPrint("Setup tunnel success - No LUID returned");
+      }
+
       setState(() {
         _isTunnelSetup = true;
       });

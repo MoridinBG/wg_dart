@@ -13,7 +13,7 @@ class WireguardDart {
     return WireguardDartPlatform.instance.nativeInit();
   }
 
-  Future<void> setupTunnel({
+  Future<Map<String, dynamic>?> setupTunnel({
     required String bundleId,
     required String tunnelName,
     required String cfg,
