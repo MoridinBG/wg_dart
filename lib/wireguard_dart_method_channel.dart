@@ -88,18 +88,22 @@ class MethodChannelWireguardDart extends WireguardDartPlatform {
   }
 
   @override
-  Stream<ConnectionStatus> statusStream() {
-    return statusChannel.receiveBroadcastStream().distinct().map((val) {
-      // Handle the case where the event is a Map containing status
-      if (val is Map) {
-        final statusValue = val['status'];
-        if (statusValue is String) {
-          return ConnectionStatus.fromString(statusValue);
-        }
-      }
-
-      // Fallback to treating the event as a String
-      return ConnectionStatus.fromString(val?.toString() ?? "");
+  Stream<(int, ConnectionStatus)> statusStream() {
+    return statusChannel.receiveBroadcastStream().distinct().where((val) {
+      // Only process events that are Maps with both luid and status
+      if (val is! Map) return false;
+      
+      final luidValue = val['luid'];
+      final statusValue = val['status'];
+      
+      return luidValue is int && statusValue is String;
+    }).map((val) {
+      final Map event = val as Map;
+      final int luid = event['luid'] as int;
+      final String statusString = event['status'] as String;
+      final ConnectionStatus status = ConnectionStatus.fromString(statusString);
+      
+      return (luid, status);
     });
   }
 

@@ -133,12 +133,14 @@ void main() {
     });
 
     test('should get status stream successfully', () async {
-      final statusStream = Stream<ConnectionStatus>.fromIterable([ConnectionStatus.connected]);
+      final statusStream = Stream<(int, ConnectionStatus)>.fromIterable([(12345, ConnectionStatus.connected)]);
       when(mockWireGuardDartPlatform.statusStream()).thenAnswer((_) => statusStream);
 
       final result = wireguardDart.statusStream();
 
-      expect(await result.first, ConnectionStatus.connected);
+      final firstResult = await result.first;
+      expect(firstResult.$1, 12345); // Check LUID
+      expect(firstResult.$2, ConnectionStatus.connected); // Check status
       verify(mockWireGuardDartPlatform.statusStream()).called(1);
     });
 

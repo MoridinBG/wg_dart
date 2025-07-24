@@ -45,7 +45,7 @@ class _MyAppState extends State<MyApp> {
   String _platformVersion = 'Unknown';
   final _wireguardDartPlugin = WireguardDart();
   ConnectionStatus _status = ConnectionStatus.unknown;
-  late Stream<ConnectionStatus> _statusStream;
+  late Stream<(int, ConnectionStatus)> _statusStream;
   bool? _checkTunnelConfiguration;
   bool? _isTunnelSetup;
   KeyPair? _keyPair;
@@ -61,8 +61,9 @@ class _MyAppState extends State<MyApp> {
 
     // Listen to status stream and log received values
     _statusStream.listen(
-      (ConnectionStatus status) {
-        developer.log('Status stream received: ${status.name}');
+      ((int, ConnectionStatus) statusData) {
+        final (luid, status) = statusData;
+        developer.log('Status stream received - LUID: $luid, Status: ${status.name}');
       },
       onError: (error) {
         developer.log('Status stream error', error: error.toString());
@@ -176,7 +177,6 @@ class _MyAppState extends State<MyApp> {
       setState(() {
         _isTunnelSetup = true;
       });
-      debugPrint("Setup tunnel success");
       showSnackbar(
         "Setup tunnel success",
         type: MessageType.success,
@@ -441,13 +441,14 @@ class _MyAppState extends State<MyApp> {
                 ),
                 const SizedBox(height: 20),
                 Text("Query tunnel status: ${_status.name}"),
-                StreamBuilder<ConnectionStatus>(
-                    initialData: ConnectionStatus.unknown,
+                StreamBuilder<(int, ConnectionStatus)>(
+                    initialData: (0, ConnectionStatus.unknown),
                     stream: _statusStream,
-                    builder: (BuildContext context, AsyncSnapshot<ConnectionStatus> snapshot) {
-                      // Check if the snapshot has data and is a map containing the 'status' key
+                    builder: (BuildContext context, AsyncSnapshot<(int, ConnectionStatus)> snapshot) {
+                      // Check if the snapshot has data and is a tuple containing luid and status
                       if (snapshot.hasData) {
-                        return Text("Tunnel stream status: ${snapshot.data!.name}");
+                        final (luid, status) = snapshot.data!;
+                        return Text("Tunnel stream - LUID: $luid, Status: ${status.name}");
                       }
                       return const CircularProgressIndicator();
                     }),
