@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:wireguard_dart/connection_status.dart';
 import 'package:wireguard_dart/key_pair.dart';
+import 'package:wireguard_dart/adapter_status.dart';
 import 'package:wireguard_dart/tunnel_statistics.dart';
 
 import 'wireguard_dart_platform_interface.dart';
@@ -43,13 +44,30 @@ class MethodChannelWireguardDart extends WireguardDartPlatform {
   }
 
   @override
-  Future<void> setupTunnel({required String bundleId, required String tunnelName, required String cfg}) async {
+  Future<Map<String, dynamic>?> setupTunnel({required String bundleId, required String tunnelName, required String cfg}) async {
     final args = {
       'bundleId': bundleId,
       'tunnelName': tunnelName,
       'cfg': cfg,
     };
-    await methodChannel.invokeMethod<void>(WireguardMethodChannelMethod.setupTunnel.value, args);
+    final result = await methodChannel.invokeMethod(WireguardMethodChannelMethod.setupTunnel.value, args);
+    if (result == null) {
+      return null;
+    }
+    // Convert Map<Object?, Object?> to Map<String, dynamic>
+    if (result is Map) {
+      final validatedMap = <String, dynamic>{};
+      for (final entry in result.entries) {
+        if (entry.key is String) {
+          validatedMap[entry.key as String] = entry.value;
+        } else {
+          // Skip non-string keys
+          continue;
+        }
+      }
+      return validatedMap;
+    }
+    return null;
   }
 
   @override
@@ -71,18 +89,22 @@ class MethodChannelWireguardDart extends WireguardDartPlatform {
   }
 
   @override
-  Stream<ConnectionStatus> statusStream() {
-    return statusChannel.receiveBroadcastStream().distinct().map((val) {
-      // Handle the case where the event is a Map containing status
-      if (val is Map) {
-        final statusValue = val['status'];
-        if (statusValue is String) {
-          return ConnectionStatus.fromString(statusValue);
-        }
-      }
+  Stream<AdapterStatus> statusStream() {
+    return statusChannel.receiveBroadcastStream().distinct().where((val) {
+      // Only process events that are Maps with both luid and status
+      if (val is! Map) return false;
 
-      // Fallback to treating the event as a String
-      return ConnectionStatus.fromString(val?.toString() ?? "");
+      final luidValue = val['luid'];
+      final statusValue = val['status'];
+
+      return luidValue is int && statusValue is String;
+    }).map((val) {
+      final Map event = val as Map;
+      final int luid = event['luid'] as int;
+      final String statusString = event['status'] as String;
+      final ConnectionStatus status = ConnectionStatus.fromString(statusString);
+
+      return AdapterStatus(luid, status);
     });
   }
 

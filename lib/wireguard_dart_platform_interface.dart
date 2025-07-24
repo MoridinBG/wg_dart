@@ -3,6 +3,7 @@ import 'package:wireguard_dart/tunnel_statistics.dart';
 
 import 'connection_status.dart';
 import 'key_pair.dart';
+import 'adapter_status.dart';
 import 'wireguard_dart_method_channel.dart';
 
 abstract class WireguardDartPlatform extends PlatformInterface {
@@ -34,7 +35,7 @@ abstract class WireguardDartPlatform extends PlatformInterface {
     throw UnimplementedError('nativeInit() has not been implemented');
   }
 
-  Future<void> setupTunnel({
+  Future<Map<String, dynamic>?> setupTunnel({
     required String bundleId,
     required String tunnelName,
     required String cfg,
@@ -54,7 +55,7 @@ abstract class WireguardDartPlatform extends PlatformInterface {
     throw UnimplementedError('status() has not been implemented');
   }
 
-  Stream<ConnectionStatus> statusStream() {
+  Stream<AdapterStatus> statusStream() {
     throw UnimplementedError('statusStream() has not been implemented');
   }
 
