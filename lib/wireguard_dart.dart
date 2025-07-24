@@ -39,7 +39,7 @@ class WireguardDart {
     return WireguardDartPlatform.instance.status();
   }
 
-  Stream<ConnectionStatus> statusStream() {
+  Stream<(int, ConnectionStatus)> statusStream() {
     return WireguardDartPlatform.instance.statusStream();
   }
 
