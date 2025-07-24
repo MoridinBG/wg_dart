@@ -253,7 +253,9 @@ void WireguardDartPlugin::HandleSetupTunnel(const flutter::EncodableMap *args,
       if (existing_adapter->GetLUID(&luid)) {
         this->network_adapter_observer_->StartObserving(luid);
         logger_->info("Setup tunnel completed - adapter already exists: {}", *arg_tunnel_name);
-        result->Success();
+        std::map<flutter::EncodableValue, flutter::EncodableValue> return_value;
+        return_value[flutter::EncodableValue("luid")] = flutter::EncodableValue(static_cast<int64_t>(luid.Value));
+        result->Success(flutter::EncodableValue(return_value));
         return;
       }
     }
@@ -350,12 +352,17 @@ void WireguardDartPlugin::HandleSetupTunnel(const flutter::EncodableMap *args,
 
   // Store the adapter
   NET_LUID luid;
+  std::map<flutter::EncodableValue, flutter::EncodableValue> return_value;
   if (adapter->GetLUID(&luid)) {
     this->network_adapter_observer_->StartObserving(luid);
+    return_value[flutter::EncodableValue("luid")] = flutter::EncodableValue(static_cast<int64_t>(luid.Value));
+  } else {
+    logger_->warn("Failed to get LUID for adapter: {}", *arg_tunnel_name);
+    return_value[flutter::EncodableValue("luid")] = flutter::EncodableValue();
   }
   adapters_.push_back(std::move(adapter));
 
-  result->Success();
+  result->Success(flutter::EncodableValue(return_value));
   logger_->info("Setup tunnel completed successfully for adapter: {}", *arg_tunnel_name);
 }
 
