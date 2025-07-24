@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:wireguard_dart/connection_status.dart';
 import 'package:wireguard_dart/key_pair.dart';
+import 'package:wireguard_dart/adapter_status.dart';
 import 'package:wireguard_dart/tunnel_statistics.dart';
 import 'package:wireguard_dart/wireguard_dart.dart';
 import 'package:wireguard_dart_example/snackbar.dart';
@@ -45,7 +46,7 @@ class _MyAppState extends State<MyApp> {
   String _platformVersion = 'Unknown';
   final _wireguardDartPlugin = WireguardDart();
   ConnectionStatus _status = ConnectionStatus.unknown;
-  late Stream<ConnectionStatus> _statusStream;
+  late Stream<AdapterStatus> _statusStream;
   bool? _checkTunnelConfiguration;
   bool? _isTunnelSetup;
   KeyPair? _keyPair;
@@ -61,8 +62,8 @@ class _MyAppState extends State<MyApp> {
 
     // Listen to status stream and log received values
     _statusStream.listen(
-      (ConnectionStatus status) {
-        developer.log('Status stream received: ${status.name}');
+      (AdapterStatus statusData) {
+        developer.log('Status stream received - LUID: ${statusData.luid}, Status: ${statusData.status.name}');
       },
       onError: (error) {
         developer.log('Status stream error', error: error.toString());
@@ -154,16 +155,28 @@ class _MyAppState extends State<MyApp> {
   void setupTunnel() async {
     try {
       // replace with valid config file before running
-      await _wireguardDartPlugin.setupTunnel(
+      final result = await _wireguardDartPlugin.setupTunnel(
         bundleId: tunBundleId,
         tunnelName: "WiregardDart",
         cfg: """
 """,
       );
+
+      // Log the LUID from the result
+      if (result != null && result.containsKey('luid')) {
+        final luid = result['luid'];
+        debugPrint("Setup tunnel success - LUID: $luid");
+        developer.log(
+          'Setup tunnel completed - Adapter LUID: $luid',
+          name: 'WireguardDart',
+        );
+      } else {
+        debugPrint("Setup tunnel success - No LUID returned");
+      }
+
       setState(() {
         _isTunnelSetup = true;
       });
-      debugPrint("Setup tunnel success");
       showSnackbar(
         "Setup tunnel success",
         type: MessageType.success,
@@ -428,13 +441,14 @@ class _MyAppState extends State<MyApp> {
                 ),
                 const SizedBox(height: 20),
                 Text("Query tunnel status: ${_status.name}"),
-                StreamBuilder<ConnectionStatus>(
-                    initialData: ConnectionStatus.unknown,
+                StreamBuilder<AdapterStatus>(
+                    initialData: const AdapterStatus(0, ConnectionStatus.unknown),
                     stream: _statusStream,
-                    builder: (BuildContext context, AsyncSnapshot<ConnectionStatus> snapshot) {
-                      // Check if the snapshot has data and is a map containing the 'status' key
+                    builder: (BuildContext context, AsyncSnapshot<AdapterStatus> snapshot) {
+                      // Check if the snapshot has data
                       if (snapshot.hasData) {
-                        return Text("Tunnel stream status: ${snapshot.data!.name}");
+                        final statusData = snapshot.data!;
+                        return Text("Tunnel stream - LUID: ${statusData.luid}, Status: ${statusData.status.name}");
                       }
                       return const CircularProgressIndicator();
                     }),
