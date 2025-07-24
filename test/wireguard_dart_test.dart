@@ -4,6 +4,7 @@ import 'package:mockito/mockito.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:wireguard_dart/connection_status.dart';
 import 'package:wireguard_dart/key_pair.dart';
+import 'package:wireguard_dart/adapter_status.dart';
 import 'package:wireguard_dart/wireguard_dart.dart';
 import 'package:wireguard_dart/wireguard_dart_platform_interface.dart';
 
@@ -133,14 +134,14 @@ void main() {
     });
 
     test('should get status stream successfully', () async {
-      final statusStream = Stream<(int, ConnectionStatus)>.fromIterable([(12345, ConnectionStatus.connected)]);
+      final statusStream = Stream<AdapterStatus>.fromIterable([const AdapterStatus(12345, ConnectionStatus.connected)]);
       when(mockWireGuardDartPlatform.statusStream()).thenAnswer((_) => statusStream);
 
       final result = wireguardDart.statusStream();
 
       final firstResult = await result.first;
-      expect(firstResult.$1, 12345); // Check LUID
-      expect(firstResult.$2, ConnectionStatus.connected); // Check status
+      expect(firstResult.luid, 12345); // Check LUID
+      expect(firstResult.status, ConnectionStatus.connected); // Check status
       verify(mockWireGuardDartPlatform.statusStream()).called(1);
     });
 

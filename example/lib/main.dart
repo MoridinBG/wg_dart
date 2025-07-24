@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:wireguard_dart/connection_status.dart';
 import 'package:wireguard_dart/key_pair.dart';
+import 'package:wireguard_dart/adapter_status.dart';
 import 'package:wireguard_dart/tunnel_statistics.dart';
 import 'package:wireguard_dart/wireguard_dart.dart';
 import 'package:wireguard_dart_example/snackbar.dart';
@@ -45,7 +46,7 @@ class _MyAppState extends State<MyApp> {
   String _platformVersion = 'Unknown';
   final _wireguardDartPlugin = WireguardDart();
   ConnectionStatus _status = ConnectionStatus.unknown;
-  late Stream<(int, ConnectionStatus)> _statusStream;
+  late Stream<AdapterStatus> _statusStream;
   bool? _checkTunnelConfiguration;
   bool? _isTunnelSetup;
   KeyPair? _keyPair;
@@ -61,9 +62,8 @@ class _MyAppState extends State<MyApp> {
 
     // Listen to status stream and log received values
     _statusStream.listen(
-      ((int, ConnectionStatus) statusData) {
-        final (luid, status) = statusData;
-        developer.log('Status stream received - LUID: $luid, Status: ${status.name}');
+      (AdapterStatus statusData) {
+        developer.log('Status stream received - LUID: ${statusData.luid}, Status: ${statusData.status.name}');
       },
       onError: (error) {
         developer.log('Status stream error', error: error.toString());
@@ -441,14 +441,14 @@ class _MyAppState extends State<MyApp> {
                 ),
                 const SizedBox(height: 20),
                 Text("Query tunnel status: ${_status.name}"),
-                StreamBuilder<(int, ConnectionStatus)>(
-                    initialData: (0, ConnectionStatus.unknown),
+                StreamBuilder<AdapterStatus>(
+                    initialData: const AdapterStatus(0, ConnectionStatus.unknown),
                     stream: _statusStream,
-                    builder: (BuildContext context, AsyncSnapshot<(int, ConnectionStatus)> snapshot) {
-                      // Check if the snapshot has data and is a tuple containing luid and status
+                    builder: (BuildContext context, AsyncSnapshot<AdapterStatus> snapshot) {
+                      // Check if the snapshot has data
                       if (snapshot.hasData) {
-                        final (luid, status) = snapshot.data!;
-                        return Text("Tunnel stream - LUID: $luid, Status: ${status.name}");
+                        final statusData = snapshot.data!;
+                        return Text("Tunnel stream - LUID: ${statusData.luid}, Status: ${statusData.status.name}");
                       }
                       return const CircularProgressIndicator();
                     }),
