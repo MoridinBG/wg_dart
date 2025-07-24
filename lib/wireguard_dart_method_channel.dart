@@ -43,13 +43,30 @@ class MethodChannelWireguardDart extends WireguardDartPlatform {
   }
 
   @override
-  Future<void> setupTunnel({required String bundleId, required String tunnelName, required String cfg}) async {
+  Future<Map<String, dynamic>?> setupTunnel({required String bundleId, required String tunnelName, required String cfg}) async {
     final args = {
       'bundleId': bundleId,
       'tunnelName': tunnelName,
       'cfg': cfg,
     };
-    await methodChannel.invokeMethod<void>(WireguardMethodChannelMethod.setupTunnel.value, args);
+    final result = await methodChannel.invokeMethod(WireguardMethodChannelMethod.setupTunnel.value, args);
+    if (result == null) {
+      return null;
+    }
+    // Convert Map<Object?, Object?> to Map<String, dynamic>
+    if (result is Map) {
+      final validatedMap = <String, dynamic>{};
+      for (final entry in result.entries) {
+        if (entry.key is String) {
+          validatedMap[entry.key as String] = entry.value;
+        } else {
+          // Skip non-string keys
+          continue;
+        }
+      }
+      return validatedMap;
+    }
+    return null;
   }
 
   @override

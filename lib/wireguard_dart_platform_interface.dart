@@ -34,7 +34,7 @@ abstract class WireguardDartPlatform extends PlatformInterface {
     throw UnimplementedError('nativeInit() has not been implemented');
   }
 
-  Future<void> setupTunnel({
+  Future<Map<String, dynamic>?> setupTunnel({
     required String bundleId,
     required String tunnelName,
     required String cfg,
