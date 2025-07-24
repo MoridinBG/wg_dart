@@ -507,12 +507,6 @@ void WireguardDartPlugin::HandleDisconnect(const flutter::EncodableMap *args,
     return;
   }
 
-  // Stop observing this specific adapter
-  NET_LUID luid;
-  if (target_adapter->GetLUID(&luid)) {
-    this->network_adapter_observer_->StopObserving(luid);
-  }
-
   result->Success();
   logger_->info("Disconnect completed successfully for adapter: {}", *arg_tunnel_name);
 }
