@@ -72,9 +72,18 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE base64)
 
 add_compile_definitions(WIN32_LEAN_AND_MEAN) # for Wireguard winsock/windows conflict
 
+add_library(tunnel SHARED IMPORTED GLOBAL)
+set_target_properties(tunnel PROPERTIES
+    IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/lib/tunnel/amd64/tunnel.dll"
+    IMPORTED_IMPLIB "${CMAKE_CURRENT_SOURCE_DIR}/lib/tunnel/amd64/tunnel.lib"
+)
+target_include_directories(tunnel INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/lib/tunnel/include")
+target_link_libraries(${PLUGIN_NAME} PRIVATE tunnel)
+
 add_library(wireguard SHARED IMPORTED GLOBAL)
 set_target_properties(wireguard PROPERTIES
     IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/lib/wireguard/amd64/wireguard.dll"
+    IMPORTED_IMPLIB "${CMAKE_CURRENT_SOURCE_DIR}/lib/wireguard/amd64/wireguard.lib"
 )
 target_include_directories(wireguard INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/lib/wireguard/include")
 target_link_libraries(${PLUGIN_NAME} PRIVATE wireguard)
@@ -102,5 +111,6 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE flutter flutter_wrapper_plugin ws2_
 # external build triggered from this build file.
 set(wireguard_dart_bundled_libraries
   "${CMAKE_CURRENT_SOURCE_DIR}/lib/wireguard/amd64/wireguard.dll"
+  "${CMAKE_CURRENT_SOURCE_DIR}/lib/tunnel/amd64/tunnel.dll"
   PARENT_SCOPE
 )
