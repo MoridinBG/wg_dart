@@ -27,7 +27,7 @@ WireguardNetworkConfig::WireguardNetworkConfig(const NET_LUID &luid) : luid_(lui
 bool WireguardNetworkConfig::ConfigureMTU(DWORD mtu) {
   logger_->info("Setting MTU to {} for both IPv4 and IPv6", mtu);
 
-  for (ADDRESS_FAMILY family : {AF_INET, AF_INET6}) {
+  for (ADDRESS_FAMILY family : {static_cast<ADDRESS_FAMILY>(AF_INET), static_cast<ADDRESS_FAMILY>(AF_INET6)}) {
     MIB_IPINTERFACE_ROW row;
     InitializeIpInterfaceEntry(&row);
     row.InterfaceLuid = luid_;
