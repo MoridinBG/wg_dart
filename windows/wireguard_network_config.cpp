@@ -24,6 +24,35 @@ WireguardNetworkConfig::WireguardNetworkConfig(const NET_LUID &luid) : luid_(lui
   }
 }
 
+bool WireguardNetworkConfig::ConfigureMTU(DWORD mtu) {
+  logger_->info("Setting MTU to {} for both IPv4 and IPv6", mtu);
+
+  for (ADDRESS_FAMILY family : {AF_INET, AF_INET6}) {
+    MIB_IPINTERFACE_ROW row;
+    InitializeIpInterfaceEntry(&row);
+    row.InterfaceLuid = luid_;
+    row.Family = family;
+
+    DWORD result = GetIpInterfaceEntry(&row);
+    if (result != NO_ERROR) {
+      logger_->warn("Failed to get IP interface entry for family {}: Windows error {}", family, result);
+      continue;
+    }
+
+    row.NlMtu = mtu;
+    row.SitePrefixLength = 0;
+
+    result = SetIpInterfaceEntry(&row);
+    if (result != NO_ERROR) {
+      logger_->error("Failed to set MTU for family {}: Windows error {}", family, result);
+      return false;
+    }
+    logger_->debug("MTU set to {} for address family {}", mtu, family);
+  }
+
+  return true;
+}
+
 bool WireguardNetworkConfig::ConfigureIPAddresses(const std::vector<WIREGUARD_ALLOWED_IP> &addresses) {
   if (addresses.empty()) {
     logger_->info("No IP addresses to configure");

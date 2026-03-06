@@ -176,6 +176,12 @@ bool WireguardAdapter::ConfigureNetworking() {
   WireguardNetworkConfig net_config(luid);
   const auto &interface_config = parsed_config_->GetInterface();
 
+  logger_->info("Configuring MTU to {}", interface_config.mtu);
+  if (!net_config.ConfigureMTU(interface_config.mtu)) {
+    logger_->error("Failed to configure MTU");
+    return false;
+  }
+
   logger_->info("Configuring IP addresses");
   if (!net_config.ConfigureIPAddresses(interface_config.addresses)) {
     logger_->error("Failed to configure IP addresses");

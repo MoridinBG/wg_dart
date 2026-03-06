@@ -25,6 +25,9 @@ class WireguardNetworkConfig {
 public:
   explicit WireguardNetworkConfig(const NET_LUID &luid);
 
+  // MTU configuration
+  bool ConfigureMTU(DWORD mtu);
+
   // IP address configuration
   bool ConfigureIPAddresses(const std::vector<WIREGUARD_ALLOWED_IP> &addresses);
   bool RemoveIPAddresses();

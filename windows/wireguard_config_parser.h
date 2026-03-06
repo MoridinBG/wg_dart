@@ -35,6 +35,7 @@ struct ParsedInterface {
   BYTE private_key[WIREGUARD_KEY_LENGTH];
   BYTE public_key[WIREGUARD_KEY_LENGTH];
   WORD listen_port = 0;
+  DWORD mtu = 1420;  // Default WireGuard MTU
   std::vector<WIREGUARD_ALLOWED_IP> addresses;
 };
 
