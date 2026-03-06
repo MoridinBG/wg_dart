@@ -31,7 +31,7 @@ abstract class WireguardDartPlatform extends PlatformInterface {
     throw UnimplementedError('generateKeyPair() has not been implemented');
   }
 
-  Future<void> nativeInit() {
+  Future<void> nativeInit({String? logFilePath}) {
     throw UnimplementedError('nativeInit() has not been implemented');
   }
 

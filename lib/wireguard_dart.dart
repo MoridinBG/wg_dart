@@ -10,8 +10,8 @@ class WireguardDart {
     return WireguardDartPlatform.instance.generateKeyPair();
   }
 
-  Future<void> nativeInit() {
-    return WireguardDartPlatform.instance.nativeInit();
+  Future<void> nativeInit({String? logFilePath}) {
+    return WireguardDartPlatform.instance.nativeInit(logFilePath: logFilePath);
   }
 
   Future<Map<String, dynamic>?> setupTunnel({

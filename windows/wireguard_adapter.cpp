@@ -25,6 +25,7 @@ std::unique_ptr<WireguardAdapter> WireguardAdapter::Create(const std::shared_ptr
     return nullptr;
   }
 
+  adapter->SetLogging(WIREGUARD_ADAPTER_LOG_ON);
   return adapter;
 }
 
@@ -40,6 +41,7 @@ std::unique_ptr<WireguardAdapter> WireguardAdapter::Open(const std::shared_ptr<W
     return nullptr;
   }
 
+  adapter->SetLogging(WIREGUARD_ADAPTER_LOG_ON);
   return adapter;
 }
 
