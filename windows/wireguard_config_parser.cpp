@@ -134,6 +134,13 @@ bool WireguardConfigParser::ParseKeyValue(const std::string& key, const std::str
     } catch (...) {
       return false;
     }
+  } else if (key == "MTU") {
+    try {
+      iface.mtu = static_cast<DWORD>(std::stoul(value));
+      return true;
+    } catch (...) {
+      return false;
+    }
   } else if (key == "Address") {
     // Parse comma-separated addresses
     auto addresses = SplitString(value, ',');
