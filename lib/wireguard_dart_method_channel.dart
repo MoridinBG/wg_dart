@@ -39,8 +39,10 @@ class MethodChannelWireguardDart extends WireguardDartPlatform {
   }
 
   @override
-  Future<void> nativeInit() async {
-    await methodChannel.invokeMethod<void>(WireguardMethodChannelMethod.nativeInit.value);
+  Future<void> nativeInit({String? logFilePath}) async {
+    await methodChannel.invokeMethod<void>(WireguardMethodChannelMethod.nativeInit.value, {
+      if (logFilePath != null) 'logFilePath': logFilePath,
+    });
   }
 
   @override
