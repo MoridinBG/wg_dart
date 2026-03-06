@@ -9,6 +9,8 @@ import 'package:wireguard_dart/connection_status.dart';
 import 'package:wireguard_dart/key_pair.dart';
 import 'package:wireguard_dart/adapter_status.dart';
 import 'package:wireguard_dart/tunnel_statistics.dart';
+import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:wireguard_dart/wireguard_dart.dart';
 import 'package:wireguard_dart_example/snackbar.dart';
 
@@ -21,10 +23,11 @@ void main() {
 
 void nativeInitBackground(List<Object> args) async {
   final rootIsolateToken = args[0] as RootIsolateToken;
+  final logFilePath = args.length > 1 ? args[1] as String? : null;
   BackgroundIsolateBinaryMessenger.ensureInitialized(rootIsolateToken);
 
   try {
-    await WireguardDart().nativeInit();
+    await WireguardDart().nativeInit(logFilePath: logFilePath);
     debugPrint('Native init done');
   } catch (e) {
     debugPrint('Native init error');
@@ -123,7 +126,10 @@ class _MyAppState extends State<MyApp> {
 
   void nativeInit() async {
     RootIsolateToken rootIsolateToken = RootIsolateToken.instance!;
-    Isolate.spawn(nativeInitBackground, [rootIsolateToken]);
+    final documentsDir = await getApplicationDocumentsDirectory();
+    final date = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final logFilePath = '${documentsDir.path}\\$date-wireguard.log';
+    Isolate.spawn(nativeInitBackground, [rootIsolateToken, logFilePath]);
   }
 
   Future<void> checkTunnelConfiguration() async {
